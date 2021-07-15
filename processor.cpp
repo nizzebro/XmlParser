@@ -1,77 +1,12 @@
 
-#include "pch.h"
-#include "Processor.h"
-
+#include "processor.h"
+#include <cassert>
 #define _CRT_SECURE_NO_WARNINGS
 
 
 using namespace std;
+using namespace char_parsers;
 
-
-//bool Processor::skip(int n)
-//{
-//  do {
-//    n -= currentTextLength();
-//    if(n > 0) {
-//      cpos = endPos;
-//      return true;
-//    }
-//  } while(readToBuffer());
-//  return false;
-//}
-//
-//
-////  PER-FILE SEARCH SKIPPING DATA; advances endPos = cpos
-//
-//bool Processor::skipTo(const char* s, int n) noexcept {
-//  do {
-//    if(moveTo(s, n)) {
-//      cpos = endPos;
-//      return true;
-//    }
-//  } while(readToBuffer());
-//  return false;
-//}
-//
-//
-//template<int N>
-//bool Processor::skipTo(const char (&s)[N]) noexcept {
-//  Processor::skipTo((const char*)s, N-1);
-//}
-//
-//bool Processor::skipTo (char c) noexcept {
-//  do {
-//      if(moveTo(c)) {
-//        cpos = endPos;
-//        return true;
-//      }
-//    } while(readToBuffer());
-//  return false;
-//}
-//
-//bool Processor::skipToNonBlank() noexcept {
-//   do {
-//      if(moveToNonBlank()) {
-//        cpos = endPos;
-//        return true;
-//      }
-//    } while(readToBuffer());
-//  return false;
-//}
-//
-//bool Processor::skipToBlank() noexcept {
-//  do {
-//      if(moveToBlank()) {
-//        cpos = endPos;
-//        return true;
-//      }
-//    } while(readToBuffer());
-//  return false;
-//}
-////
-////
-//
-////  WRITE; doesn't affect pointers
 //
 //void Processor::write(size_t iFile, const char * s, int n) noexcept
 //{
@@ -122,29 +57,6 @@ using namespace std;
 //  return false;
 //}
 //
-//bool Processor::writeToNonBlank(size_t iFile) noexcept {
-//  do {
-//      bool b = moveToNonBlank();
-//      Processor::write(iFile, cpos, (int)(endPos - cpos));
-//      if(b)  {
-//        cpos = endPos;
-//        return true;
-//      }
-//    } while(readToBuffer());
-//  return false;
-//}
-//
-//bool Processor::writeToBlank(size_t iFile) noexcept {
-//  do {
-//      bool b = moveToBlank();
-//      Processor::write(iFile, cpos, (int)(endPos - cpos));
-//      if(b)  {
-//        cpos = endPos;
-//        return true;
-//      }
-//    } while(readToBuffer());
-//  return false;
-//}
 
 
 
@@ -227,465 +139,402 @@ using namespace std;
 //}
 
 
-// reads a chunk from file to buffer, setting position pointer 
-// to the beginning of the buffer, returns n bytes read; 0 = eof
+// reads a chunk from file to buffer, returns n bytes read; 0 = eof
 
-size_t XmlParser::read() noexcept
+bool XmlParser::loadNextChunk() noexcept
 {
-  size_t nRead = _fread_nolock(buffer, 1, cpos.end() - buffer, input);
-  nReadTotal += nRead; 
-  if(nRead != (cpos.end() - buffer)) 
+  size_t nRead = _fread_nolock((void*)get(), 1, _chunkSize, _input);
+  _nReadTotal += nRead; 
+  if(nRead != _chunkSize) 
   {
-      if(ferror(input)) exitCode |= kErrRead;
+      assign(get(), nRead);
+      if (!nRead)
+      {
+        _eof = true;
+        if(ferror(_input)) _exitCode |= ExitCode::kErrReadFile;
+        return false;
+      }
   }
-  cpos.assign(buffer, buffer + nRead);
-  return nRead;
-}
-
-// searches for char satisfying a condition;
-// increments position pointer, stops on the char found or eof 
-// returns the char found or 0: eof 
-template <typename P>
-char XmlParser::parseSeek(P pred) noexcept 
-{
-    do { auto c = cpos.seek_if(pred); if(c) return c; }
-    while(read());
-    return 0;
-}
-
-// safely gets current char or 0 on eof; no increment
-char XmlParser::parsePeekc() noexcept
-{
-    auto c = cpos.peekc(); 
-    if(c) return c;
-    read(); 
-    return cpos.peekc(); 
-}
-
-// safely gets current char or 0 on eof;  increment
-char XmlParser::parseGetc() noexcept
-{
-    auto c = cpos.getc(); 
-    if(c) return c;
-    read(); 
-    return cpos.getc(); 
-}
-
-bool XmlParser::parseSkip() noexcept 
-{
-    auto b = cpos.skip();
-    if(b) return b;
-    read();
-    return cpos.skip();
-}
-
-
-// appends one char to tagBuffer and increments position;
-// returns the appended char or 0 on eof
-char XmlParser::parseAppendc() noexcept {
-
-    auto c = cpos.appendc(tagBuffer);
-    if(c) return c;
-    read();
-    return cpos.appendc(tagBuffer);
-}
-
-// appends chars to tagBuffer until meets a char that satisfies a condition
-// appends that char either
-// returns that last char or 0 when either eof or size limit is reached
-template <typename P>
-char XmlParser::parseAppendEndingWith(P pred) noexcept
-{   
-    do {
-        auto c = cpos.seek_append_if(pred, tagBuffer);
-        if (c) 
-        {
-            tagBuffer += c;  
-            cpos.skip();
-            return c;
-        }
-    } while (tagBuffer.size() < max_tag_length && read());
-
-    return 0;
-}
-
-
-size_t XmlParser::parseAppendSkipStr(const char* cstr) noexcept
-{   
-    assert (*cstr);
-    auto n = 0;
-    do {
-        n += cpos.skipstr_append(cstr, tagBuffer);
-        if(!cpos.empty()) break;
-        cstr += n;
-     } while (read());  
-    return n;
+  return true;
 }
 
  
-bool XmlParser::parseAppendRestOfComment() noexcept 
+bool XmlParser::appendRestOfComment() noexcept 
 {   
-    while(auto c = parseAppendEndingWith(charsor::eq<'-'>)) 
+    while (auto c = append_seek_if(_text, is_eq('-'), true)) 
     {
-        while ((c = parseAppendc())  == '-') {} // skip potential "-----..."
+        while ((c =  appendc(_text)) == '-') {}
         if (c == '>') return true; 
-        if (!c) break;
     } 
     return false;    
 }
 
-// appends chars to tagBuffer ending with "?>"
+bool XmlParser::appendRestOfCDATA() noexcept 
+{   
+    while (auto c = append_seek_if(_text, is_eq(']'), true)) 
+    {
+        while ((c =  appendc(_text)) == ']') {}
+        if (c == '>') return true; 
+    } 
+    return false;    
+}
+
+// appends chars to textBuffer ending with "?>"
 // the curr. position should be next after "<?"
 // returns false on eof
 
-bool XmlParser::parseAppendRestOfPI() noexcept 
+bool XmlParser::appendRestOfPI() noexcept 
 {   
-    while (auto c = parseAppendEndingWith(charsor::eq<'?'>))
+    while (auto c = append_seek_if(_text, is_eq('?'), true))
     {
-        if ((c = parseAppendc()) == '>') return true;
-        if(!c) break;
+        if ((c =  appendc(_text)) == '>') return true;
     }
     return false;    
 }
 
-// reads tag to tagBuffer, advancing position to the next after it
+// reads tag to textBuffer, advancing position to the next after it
 // the curr. position should be next on "<"
 // returns tag code (on error, Element::TagType::kNone = 0)
 
-XmlParser::Element::TagType XmlParser::parseTag() noexcept 
-{
-   tagBuffer.clear();
-   parseAppendc(); // '<'; 
-   auto c = parseAppendc();
-   if(c == '/') // End-tag: "</" (any chars except '>') '>' 
-   {
-       if(parseAppendEndingWith(charsor::eq<'>'>))
-           return Element::TagType::kETag;
 
-   }
-   else if(c == '?') // PI (Processor Instruction): "<?" (any chars except "?>") "?>" 
+int XmlParser::loadTag() noexcept 
+{
+   _text = '<'; 
+   unchecked_skip();
+   auto c = appendc(_text);
+   if(c == '/') // End-tag: "</" + (any chars except '>')  + '>' 
    {
-       if(parseAppendRestOfPI()) return Element::TagType::kPI;  
-       
+       if(append_seek_if(_text, (is_eq('>')), true))
+           return EntityType::kSuffix;
    }
-   else if(c == '!') // comment or DTD or CData: "<!" (any chars, comments or PI's ) '>' 
+   else if(c == '?') // PI (Processor Instruction): "<?" + (any chars except "?>") + "?>" 
    {
-       // comments are: "<!--" (any chars except "-->") "-->"
-       // cData's are: "<[CDATA[" (any chars except "]]>") "]]>"
-       // DTD's are: "<!" (not only any chars except '>', but also nested DTD's, PI's and comments) ">"
+       if(appendRestOfPI()) return EntityType::kPI;  
+   }
+   else if(c == '!') // comment, or DTD, or CData: "<!" + (any chars, comments or PI's ) + '>' 
+   {
+       // comments are: "<!--"  + (any chars except "-->") +  "-->"
+       // cData's are: "<[CDATA["  + (any chars except "]]>") +  "]]>"
+       // DTD's are: "<!"  + (any chars except '>' and, besides, nested DTD's, PI's or comments) +  ">"
 
        // check if it is a comment, CData or DTD
 
-        auto c = parsePeekc(); // lookup to avoid removing next '<' from queque (can be DTD's nested elements)
+        auto n = append_skip_while(_text, "--");
 
-        if (c == '-') // "<!-" check for a comment
+        if(n == sizeof("--"))  
         {
-            parseSkip();
-            c = parsePeekc(); // lookup again
-            if (c == '-') // "<!--" yup, comment
-            {
-                parseSkip();
-                if(parseAppendRestOfComment()) 
-                    return Element::TagType::kComment;
-            }
-        } 
-        else if(c == '[') // load all cdata in buffer
-        {
-            if(parseAppendSkipStr("CDATA[") == sizeof("CDATA["))
-            {
-                //if (!xml.keepCDataTags)
-                    tagBuffer.clear();
-                while (parseAppendEndingWith(charsor::eq<']'>))
-                {
-                    if(parseAppendSkipStr("]>") == sizeof("]>"))
-                    {
-                        //if (!xml.keepCDataTags) 
-                            tagBuffer.erase(tagBuffer.length() - 3);
-                        return  Element::TagType::kCData; 
-                    }
-                }
-                
-            }
-                
+            return appendRestOfComment()? EntityType::kComment :
+            EntityType::kEnd;
         }
-        else
-        {
-            int iNested = 1;        // count matching '< >'
-            while (c = parseAppendEndingWith (charsor::eq<'<','>'>))
+
+        else if(level() && append_skip_while(_text, "[CDATA[") == sizeof("[CDATA["))    
+        {  
+            if(!_keepEscaped) _text.clear();
+
+            if (appendRestOfCDATA())
             {
-                if (c == '<')  // "...<"
-                {   
-                    c = parseAppendc(); 
+                if(!_keepEscaped) _text.erase(_text.size() - sizeof("]>")); 
+                return  EntityType::kCData; 
+            }
+            return EntityType::kEnd;
+        }
 
-                    if(c == '!') // "...<!"
+        // DTD
+
+        int iNested = 1;        // count matching '< >'
+
+        while (c = append_seek_if(_text, is_of('<','>'), true))
+        {
+            if (c == '<')  // "...<"
+            {   
+                c = appendc(_text); 
+
+                if (c == '!') // "<!-" comment?
+                {
+                    if(append_skip_while(_text, "--") == sizeof("--")) 
                     {
-                        auto c = parsePeekc();
-                        if(c == '-') // "...<!-" nested comment?
-                        {
-                            parseSkip();
-                            c = parsePeekc(); 
-                            if (c == '-') // "...<!--" yup, nested comment
-                            {
-                                parseSkip();
-                                if(!parseAppendRestOfComment()) break;   
-                            }
-                        } 
-                    }
+                        if (!appendRestOfComment()) break;
+                    } 
+                } 
 
-                    else if(c == '?') // "...<?"
-                    {
-                        if(!parseAppendRestOfPI()) break;
-                    }
-
-                    else if(!c) break;
-
-                    else ++iNested;          
+                else if(c == '?') // "...<?"
+                {
+                    if(!appendRestOfPI()) break; 
                 }
-                else // '...>'
-                {  
-                    if((--iNested) == 0) return Element::TagType::kDTD;
 
-                } // end if '<' or '>'
+                else if(!c) break;
+                else ++iNested;          
+            }
+            else // '...>'
+            {  
+                if((--iNested) == 0) return EntityType::kDTD;
+                // // TODO or not : if level() error - DTD shouldn't appear inside elements.
 
-            } // end while is_of('<', '>')
-        } // end else (dispatch the char next after "<!")
+            } // end if '<' or '>'
+        } 
    } 
-   else if(c)
+   else if(c) // start-tag
    {
-        if(parseAppendEndingWith(charsor::eq<'>'>)) return Element::TagType::kSTag;
+       // append until '>' but check if it appended already; "<>" is odd but anyway...
+       // still, TODO: better checks for allowed first character
+        if(c != '>' && append_seek_if(_text, (is_eq('>')), true))  
+        {
+            if(_text[_text.size() - 1] != '/') return EntityType::kPrefix;
+            return EntityType::kSelfClosing;
+        }
    }
 
-    return  Element::TagType::kNone;   
+   return  EntityType::kEnd;   
 }
 
 
 
-void XmlParser::processContent(bool cData) noexcept 
+void append_utf8(UChar c, std::string& dst)
 {
-    xml.contentAvailable = true;
-    onContent(xml);
-    xml.cData = cData;
-    if (cData) cdpos = tagBuffer;
-
-    if (xml.contentAvailable)
-    {
-        parseSeek(charsor::eq<'<'>);
-        xml.contentAvailable = false;
+    if (c < 0x80)                       
+        dst += static_cast<char>(c);
+    else if (c < 0x800) {               
+        dst += static_cast<char>((c >> 6)          | 0xc0);
+        dst += static_cast<char>((c & 0x3f)        | 0x80);
     }
-
-}
-
-void XmlParser::processSTag() noexcept
-{
-    bool isSelfClosing = tagBuffer[tagBuffer.size() - 1] == '/';
-    xml.path.push_back(STag(std::move(tagBuffer)));
-    onPrefix(xml, isSelfClosing);
-    if(isSelfClosing) xml.path.pop_back();
-}
-
-
-void XmlParser::processETag() noexcept
-{
-    if(xml.level())
-    {
-        xml.endTag = std::move(tagBuffer);
-        onSuffix(xml);
-        xml.path.pop_back();
+    else if (c < 0x10000) {              
+        dst += static_cast<char>((c >> 12)         | 0xe0);
+        dst += static_cast<char>(((c >> 6) & 0x3f) | 0x80);
+        dst += static_cast<char>((c & 0x3f)        | 0x80);
+    }
+    else {                               
+        dst += static_cast<char>((c >> 18)         | 0xf0);
+        dst += static_cast<char>(((c >> 12) & 0x3f)| 0x80);
+        dst += static_cast<char>(((c >> 6) & 0x3f) | 0x80);
+        dst += static_cast<char>((c & 0x3f)        | 0x80);
     }
 }
- 
-bool XmlParser::processTag(XmlParser::Element::TagType t) noexcept 
+
+
+
+int XmlParser::loadText() noexcept
 {
-    switch (t)
+    _text.clear();
+    if (_keepEscaped) 
     {
-        case Element::TagType::kSTag: 
-            processSTag();
+        auto c = append_seek(_text, '<');
+        return c ? EntityType::kText : EntityType::kEnd;
+    }
+    while(auto c = append_seek_if(_text, is_of('<', '&')))
+    {
+        if (c == '<') return EntityType::kText;
+        unchecked_appendc(_text); 
+        auto offs = _text.size(); // after "...&"
+        if (peek() == '#') 
+        {
+            unchecked_skip();
+            int radix = 10;
+            if (peek() == 'x') 
+            {
+                radix = 16; 
+                unchecked_skip();
+            }
+            c = append_seek(_text, ';');
+            if(!c) continue;
+            _text += '\0';
+            auto val = strtoul(_text.data() + offs, 0, radix);
+            _text.erase(--offs);
+            append_utf8(val, _text);
+            continue;
+        }
+        c = append_seek(_text, ';');
+        if (!c) break;
+        std::string_view s (_text.data() + offs, _text.size() - offs);
+        char cc = 0;
+        if (s == "quot") cc = 0x22;
+        else if (s == "amp") cc = 0x26;
+        else if (s == "apos") cc = 0x27;
+        else if (s == "lt") cc = 0x3C;
+        else if (s == "gt") cc = 0x3E;
+        else 
+        {
+            _text += ';';
+            continue;
+        }
+        _text.erase(--offs);
+        _text += cc;
+    }
+
+    return EntityType::kEnd;
+}
+
+void XmlParser::skipElement() noexcept
+{
+    auto i = level();
+    while(next() && level() >= i) {}
+}
+
+void XmlParser::writeEntity(IWriter & writer, std::size_t userIndex)
+{
+    writer.write(_text.data(), _text.size(), userIndex);
+}
+
+void XmlParser::writeElement(IWriter & writer, bool keepEscaping, std::size_t userIndex)
+{
+}
+
+
+void XmlParser::pushPrefix() noexcept
+{
+    _path.push_back(_text.size());
+    _tagStrings.append(_text);
+}
+
+void XmlParser::popPrefix() noexcept
+{
+    _path.pop_back(); 
+    _tagStrings.erase(_path.back());
+}
+
+bool XmlParser::next() noexcept
+{
+    auto t = _entityType;
+    if(t != EntityType::kEnd) 
+    {
+        // check if current one is a suffix or a self-closing element
+        // (self-closing ones are pushed too, for uniformity) and pop it
+        if(t & EntityType::kElementEndMask) 
+        {
+            popPrefix(); 
+        }
+
+        // skip ascii blanks
+        auto c = seek_if(is_gt(' ')); 
+
+        if(c == '<') // tag
+        {
+            auto t = loadTag(); 
+            _entityType = t;
+            if(t & EntityType::kElementStartMask) 
+            {
+                pushPrefix(); // self-closing ones are pushed too, for uniformity
+                return true;
+            }
+
+            if (t == EntityType::kEnd) _exitCode |=  ExitCode::kErrTagUnclosed;
+
+            if (level()) return true;
+
+            // document level: handle end-tags alone or cdata-s
+            if (t == EntityType::kSuffix)
+            {
+                _entityType = EntityType::kEnd; 
+                _exitCode |= ExitCode::kErrTagUnmatch;
+                return false;
+            }
+            // another odd thing for the document level would be CDATA, but loadTag() checks
+            // for level() - so that if it would appear, it would handled as DTD.
+        }
+
+        if(c) // some characters 
+        {
+            _entityType = EntityType::kText;
+
+            if(level())  return loadText();
+
+            // document level; skip anything outside elements as BOM or garbage 
+            if (seek('<')) return next(); 
+            // eof, no errors
+            _entityType = EntityType::kEnd; 
             return true;
-        case Element::TagType::kETag:
-            processETag();
-            return true;
-        case Element::TagType::kCData: 
-            processContent(true);
-            return true;
-        case Element::TagType::kPI: 
-            onPI(tagBuffer, xml.path); 
-            return true; 
-        case Element::TagType::kComment: 
-            onComment(tagBuffer, xml.path); 
-            return true; 
-        case Element::TagType::kDTD: // should not appear here but anyway
-            onDTD(tagBuffer);
-            return true; 
-    }
+        }
 
-    return false;
-}
-
-
-bool  XmlParser::processNextEnity() noexcept 
-{
-    auto t = xml.parsedTagType;
-
-    if(t != Element::TagType::kNone) 
-    {
-        xml.parsedTagType = Element::TagType::kNone;
-        return processTag(t);
-    }
-
-
-    auto c = parseSeek(charsor::gt<' '>);
-
-    if(c == '<') return processTag(parseTag());
-    if(c) {
-        processContent(false);
+        // eof
+        _entityType = EntityType::kEnd;
+        if(level()) _exitCode |= ExitCode::kErrTagUnmatch;
         return true;
     }
 
     return false;
 }
 
+
 int XmlParser::process(const char* path, size_t bufferSize) noexcept
 {
-    nReadTotal = 0;
-    input = fopen(path, "rb");
-    exitCode = setvbuf(input,  nullptr, _IONBF, 0 ) == 0 ? kErrOk : kErrOpen;
-    if(exitCode == kErrOk) 
+    _nReadTotal = 0;
+    _eof = false;
+    _tagStrings.clear();
+    _path.assign(2, 0);
+    _keepEscaped = false;
+    _entityType = EntityType::kNone;
+
+    _input = fopen(path, "rb");
+    _exitCode = setvbuf(_input,  nullptr, _IONBF, 0 ) == 0 ? 
+        ExitCode::kErrOk : ExitCode::kErrOpenFile;
+
+    if(_exitCode == ExitCode::kErrOk) 
     {
-        bufferSize = (bufferSize + (buffer_gran - 1)) & (~(buffer_gran - 1));
-        buffer = new char [bufferSize];
-        cpos.assign(buffer, buffer + bufferSize);
-        if(read()) // cpos assignment is inside read()
-        {
-            while(processNextEnity()) {}  
-        }
-        delete [] buffer;
-        xml = {};
+        _chunkSize = (bufferSize + (buffer_gran - 1)) & (~(buffer_gran - 1));
+        auto p = new char[_chunkSize];
+        assign (p, 0);
+
+        process();
+
+        delete[] p;     
     }
-    if(input && (fclose(input) != 0)) { exitCode |= kErrClose; }
-    return exitCode;
+
+    if(_input && fclose(_input) != 0) _exitCode |= ExitCode::kErrCloseFile;
+    return _exitCode;
 }
 
 
-std::string_view XmlParser::STag::getName() const noexcept
+
+std::string_view XmlParser::getName(std::size_t idx) const noexcept
 {
-    auto p = data() + 1;
-    charsor it(p, data() + size());
-    it.seek_if(charsor::eq<' ','>','/'>);
+    auto s = getSTagString(idx);
+    auto p = s.data() + 1;
+    charser it(p, s.size());
+    it.seek_if(is_of(' ', is_of('>','/')));
     return std::string_view(p, it.get() - p);
 }
 
-std::vector<XmlParser::Attribute> XmlParser::STag::getAttributes() const noexcept
+std::vector<XmlParser::Attribute> XmlParser::getAttributes(std::size_t idx) const noexcept
 {
-    auto p = data() + 1;
-    charsor it(p, data() + size());
+    auto s = getSTagString(idx);
+    auto p = s.data() + 1; 
+    charser it(p, s.size());
     std::vector<Attribute> v;
     while(it.seek(' '))
     {
-        it.skip();
+        it.unchecked_skip();
         p = it.get();
         if(!it.seek('=')) break;
         std::string_view name(p, it.get() - p); 
-        it.skip();
+        it.unchecked_skip();
         if(it.getc() != '"') break;
         p = it.get();
         if(!it.seek('"')) break;
         std::string_view value(p, it.get() - p); 
-        it.skip(); 
+        it.unchecked_skip();
         v.push_back(Attribute{name, value});
     }
     return std::move(v);
 }
 
-const std::string & XmlParser::Element::getEndTagString() noexcept
+std::string_view XmlParser::getSTagString(std::size_t idx) const noexcept
 {
-    if(endTag.empty())
-    {
-       endTag += '<';
-       endTag += '/';
-       endTag.append(getName());
-       endTag  += '>';
-    }
-    return endTag;
+    assert(idx <= level());
+    auto oStart = _path[idx];
+    auto oEnd = _path[idx + 1];
+    return std::string_view(_tagStrings.data() + oStart, oEnd - oStart);
 }
 
-char XmlParser::getChar() noexcept
-{
-    if(xml.contentAvailable)
-    {
-        
-        if(!xml.cData)
-        {
-            auto c = parsePeekc();
 
-            if (c != '<') return parseGetc();
-           
-            auto t = parseTag();
-            if(t == Element::TagType::kCData)
-            {
-                xml.cData = true;
-                cdpos = tagBuffer;
-                return getChar();
-            }
-                
-            xml.contentAvailable = false; // end of block
-            xml.parsedTagType = t;    // save 
 
-            return 0;
-        }
-        else
-        {
-           auto c = cdpos.getc();
-           if (c) return c;
-           xml.cData = false;
-           return getChar();
-        }
-    }
-    return 0;
-}
+//const std::string & XmlParser::Element::getEndTagString() noexcept
+//{
+//    if(_endTag.empty())
+//    {
+//       _endTag += '<';
+//       _endTag += '/';
+//       _endTag.append(getName());
+//       _endTag  += '>';
+//    }
+//    return _endTag;
+//}
 
-char XmlParser::getChar(std::string & s) noexcept
-{
-    auto c = getChar();
-    if(c) s = c;
-    return c;
-}
-
-char XmlParser::appendChar(std::string & s) noexcept
-{
-    auto c = getChar();
-    if(c) s += c;
-    return c;
-}
-
-bool XmlParser::getChars(std::string & s, size_t n) noexcept
-{
-    s.clear();
-    return appendChars(s, n);
-}
-
-bool XmlParser::appendChars(std::string & s, size_t n) noexcept
-{
-    char c;
-    while(n && (c = getChar())) {s += c;  --n;}
-    return !n;
-}
-
-bool XmlParser::getLine(std::string & s, char delim) noexcept
-{
-    s.clear();
-    return appendLine(s, delim);
-}
-
-bool XmlParser::appendLine(std::string & s, char delim) noexcept
-{
-    while(auto c = getChar())
-    {
-        if (c != delim)
-        {
-             s += c;
-             continue;
-        }
-       return true;
-    };
-    return false;
-}
