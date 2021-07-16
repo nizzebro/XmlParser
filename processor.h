@@ -221,6 +221,7 @@ class XmlParser: private char_parsers::chunk_charser<char,XmlParser> {
     //static const int max_tag_length = 0x100000;  // unused yet
    
     FILE* _input;
+    char* buffer;
     int _chunkSize;
     std::size_t _nReadTotal;
     int _exitCode;

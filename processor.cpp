@@ -143,25 +143,24 @@ using namespace char_parsers;
 
 bool XmlParser::loadNextChunk() noexcept
 {
-  size_t nRead = _fread_nolock((void*)get(), 1, _chunkSize, _input);
+  size_t nRead = _fread_nolock(buffer, 1, _chunkSize, _input);
+  assign(buffer, nRead);
   _nReadTotal += nRead; 
-  if(nRead != _chunkSize) 
-  {
-      assign(get(), nRead);
-      if (!nRead)
-      {
-        _eof = true;
-        if(ferror(_input)) _exitCode |= ExitCode::kErrReadFile;
-        return false;
-      }
-  }
+
+    if (!nRead)
+    {
+    _eof = true;
+    if(ferror(_input)) _exitCode |= ExitCode::kErrReadFile;
+    return false;
+    }
+
   return true;
 }
 
  
 bool XmlParser::appendRestOfComment() noexcept 
 {   
-    while (auto c = append_seek_if(_text, is_eq('-'), true)) 
+    while (auto c = append_seek_if(_text, is_eq<'-'>, true)) 
     {
         while ((c =  appendc(_text)) == '-') {}
         if (c == '>') return true; 
@@ -171,7 +170,7 @@ bool XmlParser::appendRestOfComment() noexcept
 
 bool XmlParser::appendRestOfCDATA() noexcept 
 {   
-    while (auto c = append_seek_if(_text, is_eq(']'), true)) 
+    while (auto c = append_seek_if(_text, is_eq<']'>, true)) 
     {
         while ((c =  appendc(_text)) == ']') {}
         if (c == '>') return true; 
@@ -185,7 +184,7 @@ bool XmlParser::appendRestOfCDATA() noexcept
 
 bool XmlParser::appendRestOfPI() noexcept 
 {   
-    while (auto c = append_seek_if(_text, is_eq('?'), true))
+    while (auto c = append_seek_if(_text, is_eq<'?'>, true))
     {
         if ((c =  appendc(_text)) == '>') return true;
     }
@@ -204,7 +203,7 @@ int XmlParser::loadTag() noexcept
    auto c = appendc(_text);
    if(c == '/') // End-tag: "</" + (any chars except '>')  + '>' 
    {
-       if(append_seek_if(_text, (is_eq('>')), true))
+       if(append_seek_if(_text, is_eq<'>'>, true))
            return EntityType::kSuffix;
    }
    else if(c == '?') // PI (Processor Instruction): "<?" + (any chars except "?>") + "?>" 
@@ -243,7 +242,7 @@ int XmlParser::loadTag() noexcept
 
         int iNested = 1;        // count matching '< >'
 
-        while (c = append_seek_if(_text, is_of('<','>'), true))
+        while (c = append_seek_of(_text, "<>", true))
         {
             if (c == '<')  // "...<"
             {   
@@ -277,7 +276,7 @@ int XmlParser::loadTag() noexcept
    {
        // append until '>' but check if it appended already; "<>" is odd but anyway...
        // still, TODO: better checks for allowed first character
-        if(c != '>' && append_seek_if(_text, (is_eq('>')), true))  
+        if(c != '>' && append_seek_if(_text, (is_eq<'>'>), true))  
         {
             if(_text[_text.size() - 1] != '/') return EntityType::kPrefix;
             return EntityType::kSelfClosing;
@@ -320,7 +319,7 @@ int XmlParser::loadText() noexcept
         auto c = append_seek(_text, '<');
         return c ? EntityType::kText : EntityType::kEnd;
     }
-    while(auto c = append_seek_if(_text, is_of('<', '&')))
+    while(auto c = append_seek_of(_text, "<&"))
     {
         if (c == '<') return EntityType::kText;
         unchecked_appendc(_text); 
@@ -381,8 +380,8 @@ void XmlParser::writeElement(IWriter & writer, bool keepEscaping, std::size_t us
 
 void XmlParser::pushPrefix() noexcept
 {
-    _path.push_back(_text.size());
-    _tagStrings.append(_text);
+    _tagStrings.append(_text);   
+    _path.push_back(_tagStrings.size());
 }
 
 void XmlParser::popPrefix() noexcept
@@ -404,7 +403,7 @@ bool XmlParser::next() noexcept
         }
 
         // skip ascii blanks
-        auto c = seek_if(is_gt(' ')); 
+        auto c = seek_if(is_gt<' '>); 
 
         if(c == '<') // tag
         {
@@ -470,12 +469,12 @@ int XmlParser::process(const char* path, size_t bufferSize) noexcept
     if(_exitCode == ExitCode::kErrOk) 
     {
         _chunkSize = (bufferSize + (buffer_gran - 1)) & (~(buffer_gran - 1));
-        auto p = new char[_chunkSize];
-        assign (p, 0);
+        buffer = new char[_chunkSize];
 
+        assign(buffer, 0);
         process();
 
-        delete[] p;     
+        delete[] buffer;     
     }
 
     if(_input && fclose(_input) != 0) _exitCode |= ExitCode::kErrCloseFile;
@@ -489,7 +488,7 @@ std::string_view XmlParser::getName(std::size_t idx) const noexcept
     auto s = getSTagString(idx);
     auto p = s.data() + 1;
     charser it(p, s.size());
-    it.seek_if(is_of(' ', is_of('>','/')));
+    it.seek_of(" >/");
     return std::string_view(p, it.get() - p);
 }
 

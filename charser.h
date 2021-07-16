@@ -2,46 +2,47 @@
 
 #include <cctype>
 #include <string>
+#include <string_view>
 #include <functional>
 
 namespace char_parsers
 {
 
 using UChar = uint_least32_t;
-using predicate = std::function<bool(UChar)>;
 
 /// Common character-checking unary predicates.
 
-static predicate is_eq(UChar c) noexcept {return [&](UChar ch){return c == ch;};}
-static predicate is_lt(UChar c) noexcept {return [&](UChar ch){return c < ch;};}
-static predicate is_gt(UChar c) noexcept {return [&](UChar ch){return c > ch;};}
-static predicate is_lt_eq(UChar c) noexcept {return [&](UChar ch){return c <= ch;};}
-static predicate is_gt_eq(UChar c) noexcept {return [&](UChar ch){return c >= ch;};}
-static predicate is_space() noexcept {return [](UChar ch){return std::isspace(ch);};}
-static predicate is_punct() noexcept {return [](UChar ch){return std::ispunct(ch);};}
-static predicate is_blank() noexcept {return [](UChar ch){return std::isblank(ch);};}
-static predicate is_alnum() noexcept {return [](UChar ch){return std::isalnum(ch);};}
-static predicate is_print() noexcept {return [](UChar ch){return std::isprint(ch);};}
-static predicate is_graph() noexcept {return [](UChar ch){return std::isgraph(ch);};}
-static predicate is_cntrl() noexcept {return [](UChar ch){return std::iscntrl(ch);};}
-static predicate is_digit() noexcept {return [](UChar ch){return std::isdigit(ch);};}
+
+
+template <UChar c>
+auto constexpr is_eq =  [](UChar ch){return c == ch;};
+template <UChar c>
+auto constexpr is_lt = [](UChar ch){return ch < c;};
+template <UChar c>
+auto constexpr is_gt =  [](UChar ch){
+    return ch > c;
+};
+template <UChar c>
+auto constexpr is_lt_eq =  [](UChar ch){return ch <= c;};
+template <UChar c>
+auto constexpr is_gt_eq  =  [](UChar ch){return ch >= c;};
+auto constexpr is_space  =  [](UChar ch){return std::isspace(ch);};
+auto constexpr is_punct  =  [](UChar ch){return std::ispunct(ch);};
+auto constexpr is_blank  =  [](UChar ch){return std::isblank(ch);};
+auto constexpr is_alnum =  [](UChar ch){return std::isalnum(ch);};
+auto constexpr is_print  =  [](UChar ch){return std::isprint(ch);};
+auto constexpr is_graph =  [](UChar ch){return std::isgraph(ch);};
+auto constexpr is_cntrl =  [](UChar ch){return std::iscntrl(ch);};
+auto constexpr is_digit  =  [](UChar ch){return std::isdigit(ch);};
 
 /// Stacking character-checking unary predicates.
+template <typename q>
+auto constexpr is_not = [](UChar ch) {return !q(ch);};
 
-static predicate is_not(predicate q) noexcept
-{ return [&](UChar ch) {return !q(ch);};}
+template <typename q1, typename q2>
+auto constexpr is_of = [](UChar ch){return q1(ch) || q2(ch);};
 
-static predicate is_of(predicate q1, predicate q2) noexcept
-{return [&](UChar ch){return q1(ch) || q2(ch);};}
-
-static predicate is_of(UChar c1, UChar c2) noexcept
-{return [&](UChar ch){return c1 == ch || c2 == ch;};}
-
-static predicate is_of(predicate q, UChar c) noexcept
-{return [&](UChar ch){return q(ch) || c == ch;};}
-
-static predicate is_of(UChar c, predicate q) noexcept
-{return is_of(q, c);}
+using predicate =   std::function<bool(UChar)>;
 
 /// Base class for safe text iterators.
 ///\param T Character type
@@ -189,6 +190,23 @@ class charser_impl_fixed: public charser_base<T>
         }
         return  n? *p : 0;
     }
+
+    constexpr UChar seek(UChar c) noexcept
+    { 
+        auto p = _ptr; auto n = size();
+        if(n) 
+        {
+            while (c != *p) 
+            {
+                 ++p;
+                if (--n == 0) break; 
+            }
+            _ptr = p;
+        }
+        return  n? *p : 0;
+    }
+
+
     constexpr UChar seek_of(const char_type* cstr) noexcept
     {   
         auto n = size();
@@ -284,6 +302,19 @@ class charser_impl_fixed: public charser_base<T>
         return c;
     }
 
+    template<typename A>
+    constexpr UChar append_seek(stl_string<A>& dst, UChar ch, bool bAppFound = false) noexcept  
+    {
+        auto p = _ptr;
+        auto c = seek(ch);
+        dst.append(p, _ptr - p);
+        if (bAppFound && c) 
+        {
+            dst += c;
+            ++_ptr;
+        }
+        return c;
+    }
 
     template<typename A>
     constexpr UChar append_seek_of(stl_string<A>& dst, const char_type* cstr, bool bAppFound = false) noexcept  
@@ -968,7 +999,7 @@ class chunk_charser : public charser_impl_fixed<char>
         do {
             c = base_type::seek_if(q); 
         } while (!c && reload());
-        return false;
+        return c;
     }
 
     /** Advances the pointer while searching for a character.
@@ -978,7 +1009,11 @@ class chunk_charser : public charser_impl_fixed<char>
 
     constexpr UChar seek(UChar ch) noexcept 
     {  
-        return  seek_if(is_eq(ch));
+        char_type c;
+        do {
+            c = base_type::seek(ch); 
+        } while (!c && reload());
+        return c;
     }
 
     /** Advances the pointer while searching for any character of the string.
@@ -988,7 +1023,7 @@ class chunk_charser : public charser_impl_fixed<char>
 
     constexpr UChar seek_of(const char_type* cstr) noexcept
     { 
-        auto c;
+        char_type c;
         do {
             c = base_type::seek_of(cstr); 
         } while (!c && reload());
@@ -1039,8 +1074,9 @@ class chunk_charser : public charser_impl_fixed<char>
     template<typename A>
     constexpr UChar appendc(stl_string<A>& dst) noexcept  
     {
-        auto c = base_type::appendc(dst);
-        return c? c : (reload()? base_type::appendc(dst) : 0);
+        auto c = getc();
+        dst += (c? c : 0);
+        return c;
     }
 
     /// Replaces a string with current character and increments the poiter; returns 0 at the end.
@@ -1072,13 +1108,18 @@ class chunk_charser : public charser_impl_fixed<char>
     template<typename A>
     constexpr UChar append_seek(stl_string<A>& dst, char_type c, bool bAppFound = false) noexcept  
     {
-        return  append_seek_if(dst, is_eq(c), bAppFound);
+        char_type ch;
+        do
+        {
+           ch = base_type::append_seek(dst, c, bAppFound);
+        } while (!c && reload());
+        return ch;
     }
 
     template<typename A>
     constexpr UChar append_seek_of(stl_string<A>& dst, const char_type* cstr, bool bAppFound = false) noexcept  
     {
-        auto c;
+        char_type c;
         do
         {
            c = base_type::append_seek_of(dst, cstr, bAppFound);
