@@ -10,83 +10,86 @@ class XmlParser: private char_parsers::chunk_charser<char,XmlParser> {
     friend class char_parsers::chunk_charser<char, XmlParser>; 
 
     public:
+    static const int buffer_gran = 0x10000;  // read buffer alignment
+    static const int default_chunk_size = buffer_gran * 4; 
 
-    /// The result of processing.
-    struct ExitCode 
-    {
-        enum 
-        {
-            kErrOk = 0,             /// No errors 
-            kErrOpenFile = 1,       /// Can't open the file 
-            kErrReadFile = 2,       /// Error while reading from the file
-            kErrTagUnclosed = 4,    /// A tag without the closing brace met.
-            kErrTagUnmatch = 8,    /// An end-tag missing.
-            kErrCloseFile = 16      /// Error while closing the file
-        };
-    };
-
-    /// Entity type. 
-    struct EntityType 
+    /// Values for processing options, bits are combined.
+    struct Options
     {
         enum
         {
-            kNone = 0,              /// Initial state; start of processing 
-            kPrefix = 1,            /// Start-tag of an element
-            kSuffix = 2,            /// End-tag of an element
-            kSelfClosing = 4    ,   /// Self-closing element
-            kText = 8,              /// Text block not inside CDATA 
-            kCData = 16,            /// Text block inside CDATA
-            kPI = 32,               /// Processing instruction
-            kComment = 64,          /// Comment
-            kDTD = 128,             /// Document Type Declaration
-            kEnd = 256,             /// End-of-file or error  
-
-            kElementStartMask   = kPrefix | kSelfClosing,
-            kElementEndMask     = kSuffix | kSelfClosing,
-            kTextEntityMask     = kText | kCData
+            kReplaceMnenonics = 1,  /// Replace mnemonics with actual values 
+            kStripCDATA = 2,        /// Remove CDATA tags
+            kDefault = kReplaceMnenonics + kStripCDATA
         };
+    };
+
+    /// Get and set currently used options.
+    int getOptions() const noexcept { return _options; }
+    void setOptions(int v) noexcept {_options = v;}
+
+    /// The result of processing
+    enum struct ErrorCode 
+    {
+        kErrOk = 0,             /// No errors 
+        kErrOpenFile = 1,       /// Can't open the file 
+        kErrReadFile    = 2 ,        /// Can't read from file.
+        kErrTagUnclosed = 4,    /// A tag without the closing brace met.
+        kErrTagUnmatch = 8     /// An end-tag missing.
+    };
+
+    /// Entity type
+    enum struct EntityType 
+    {
+        kNone = 0,              /// Initial state; start of processing 
+        kPrefix = 1,            /// Start-tag of an element
+        kSuffix = 2,            /// End-tag of an element
+        kSelfClosing = 4    ,   /// Self-closing element
+        kEscapedText = 8,              /// Text block not inside CDATA 
+        kCData = 16,            /// Text block inside CDATA
+        kPI = 32,               /// Processing instruction
+        kComment = 64,          /// Comment
+        kDTD = 128,             /// Document Type Declaration
+        kEnd = 256             /// End-of-file or error  
+
+        //kElementEndMask     = kSuffix | kSelfClosing,
+        //kTextEntityMask     = kEscapedText | kCData
+
     }; 
 
-    ///  Atribute of an element
+    /// Atribute of element
     struct  Attribute  {
         std::string_view name; 
         std::string_view value;
     };
 
-    /// A class that accepts the extracted data e.g. to write it to a file
-    struct IWriter
-    {
-        /// Is called from data writing functions; userIndex can be used e.g.
-        /// to choose a particular file or data container.
-        virtual void write(const char* data, std::size_t n, std::size_t userIndex) = 0;
-    };
 
+    ///@{ Running and getting current state
 
-    /// Opens file; if open, calls process() and returns the exit code. 
-    int process(const char* path, std::size_t bufferSize = default_chunk_size) noexcept;
+    /// Launcher: opens file; on success, calls virtual void process() 
+    /// \param bufferSize Desired size of the data chunk read by from file.
+    /// \return True if no error, false otherwise
+    bool process(const char* path, std::size_t bufferSize = default_chunk_size) noexcept;
 
-    /// Callback to implement; all processing is done from here */
+    /// Callback to implement; all the data is accessed from it */
     virtual void process() = 0;
-
-    ///@{
-    /** Current state */
 
     /// True: end-of-file, can't continue.
     bool eof() const noexcept {return _eof;}  
-    /// True: error; can't continue. Can be casted to bool.
-    int error() const noexcept {return _exitCode;}  
+
+    /// True: error, processing cannot be continued. 
+    bool error() const noexcept {return getErrorCode() != ErrorCode::kErrOk;}  
+
+    ErrorCode getErrorCode() const noexcept { return _errorCode;}
+
     /// Returns !error() && !eof() 
     bool good() const noexcept {return !error() && !eof();}
 
     /// Gets the number of bytes processed at this moment. 
-    std::size_t getNumBytesProcessed() const noexcept 
+    std::size_t getFilePos() const noexcept 
     { return _nReadTotal - size(); }
-
-    /// If false (default), escaped symbols are replaced with their actual
-    ///  values and CDATA tags are removed, otherwise, all text goes as is.
-    void setKeepEscaped(bool keep) noexcept { _keepEscaped = keep; }
-
-    ///}@
+ 
+    ///}
 
     ///@{
     /** Traversing entities */
@@ -101,33 +104,16 @@ class XmlParser: private char_parsers::chunk_charser<char,XmlParser> {
     /// come more than once if interleaved with nested entities or enclosed 
     /// by CDATA-s. 
     
-
     bool next() noexcept;
-
-    /// Skips current element until the next sibling, the parent end-tag, or eof. 
-    void skipElement() noexcept;
-
-    /// Passes current entity's text to IWriter and performs next().
-    void writeEntity(IWriter& writer, std::size_t userIndex);
-    /// Passes current element's text, including all tags, to IWriter and
-    /// walks to the next element.
-    /// \param keepEscaping  If false, escaped symbols are replaced with their
-    /// actual values and CDATA tags are removed, otherwise, all text goes as is.
-    void writeElement(IWriter& writer, bool keepEscaped, std::size_t userIndex);
-    /// Same as above but handles escaped data according to the global settings.
-    void writeElement(IWriter& writer, std::size_t userIndex) 
-    {
-        writeElement(writer, userIndex, _keepEscaped);
-    }
 
     ///}@
 
     ///@{
-    /** Type of the current entity */
+    /** Type of current entity */
 
     /// Checks if the entity is either a start-tag or a self-closing tag.
     bool isElement() const noexcept 
-    {return (_entityType & EntityType::kElementStartMask);}
+    {return ((int)_entityType & ((int)EntityType::kPrefix | (int)EntityType::kSelfClosing));}
 
     /// Checks if the entity is a self-closing tag.
     bool isSelfClosing() const noexcept 
@@ -143,15 +129,15 @@ class XmlParser: private char_parsers::chunk_charser<char,XmlParser> {
 
     /// Checks if the entity is a text block, including CDATA blocks.
     bool isText() const noexcept 
-    {return (_entityType & EntityType::kTextEntityMask);}
+    {return ((int)_entityType & ((int)EntityType::kEscapedText | (int)EntityType::kCData));}
 
     /// Checks if the entity is a CDATA block.
     bool isCDATA() const noexcept 
-    {return (_entityType & EntityType::kCData);}
+    {return (_entityType == EntityType::kCData);}
 
     /// Same as ! isCDATA().
     bool isEscapedText() const noexcept 
-    {return (_entityType & EntityType::kText);}
+    {return (_entityType == EntityType::kEscapedText);}
 
     /// True if the entity  is a Processor Instruction.
     bool isPI() const noexcept 
@@ -171,14 +157,14 @@ class XmlParser: private char_parsers::chunk_charser<char,XmlParser> {
     {return (_entityType == EntityType::kEnd); }
     
     /// Current item type, see EntityType.
-    int getType() const noexcept {return _entityType; }
+    EntityType getType() const noexcept {return _entityType; }
 
     ///}@
 
     ///@{
     /** Current element's properties. */
 
-    /// Current element's name.
+    /// Current element's name
     std::string_view getName() const noexcept {return getName(level());}
 
     ///  Current element's attributes.
@@ -188,7 +174,10 @@ class XmlParser: private char_parsers::chunk_charser<char,XmlParser> {
     std::string_view getSTagString() const noexcept
     {return getSTagString(level());};
 
-    /// Get text of currently loaded text block, end-tag, PI, DTD or comment.
+    /// The text of current entity, whether a text block or a tag;
+    /// For a tag, gives its full string including angle brackets. 
+    /// For EntityType::kEnd, the text is either empty or contains 
+    /// an incomplete tag which produced the error.
     const std::string& getText() const noexcept {return _text;}
 
     ///}@
@@ -200,45 +189,88 @@ class XmlParser: private char_parsers::chunk_charser<char,XmlParser> {
     std::size_t level() const noexcept { return _path.size() - 2;}
 
     /// Name of any element which is a part of current path;
-    ///\param index <= level() (if greater or 0, returns an empty string)
+    ///\param index should be <= level(); if 0, returns an empty string
     std::string_view getName(std::size_t idx) const noexcept;
 
     /// Attributes of an element which is a part of current path; index <= level();
-    ///\param index <= level() (if greater or 0, returns an empty string)
+    ///\param index should be <= level(); if 0, returns an empty string
     std::vector<Attribute> getAttributes(std::size_t idx) const noexcept;
 
     /// Start-tag string of any element which is a part of current path;
-    ///\param index <= level() (if greater or 0, returns an empty string) 
+    ///\param index should be <= level(); if 0, returns an empty string
     std::string_view getSTagString(std::size_t idx) const noexcept;
 
     ///}@
 
+    ///@{ Extras
+
+    /// Skips current element until the next sibling, the parent end-tag, or eof. 
+    void skipElement() noexcept 
+    {    auto i = level();
+         while(next() && level() >= i) {}
+    }
+
+    /// Interface intended to copy the data e.g. to write to a file
+    struct IWriter
+    {
+        /// Callback for data writing functions 
+        /// \param data Poiter to the block to write
+        /// \param n Size of data, bytes
+        /// \param userIndex Can be used e.g. to choose a particular file or data container. 
+        /// \return True if operation was succesful, false if error occured.
+        virtual void write(const char* data, std::size_t n, std::size_t userIndex) = 0;
+    };
+
+    /// Passes current entity's text to IWriter and performs next().
+    void writeEntity(IWriter& writer, std::size_t userIndex)
+    {
+        writer.write(_text.data(), _text.size(), userIndex);
+        next();
+    }
+
+    /// Passes current element's text, including all tags, to IWriter and
+    /// walks to the next element.
+    void writeElement(IWriter& writer, std::size_t userIndex)
+    {
+        do { writer.write(_text.data(), _text.size(), userIndex); } 
+        while (next());
+    }
+
+    /// A simple ready-to-use IWriter implementation to write to files
+    class FileWriter
+    {
+        public:
+        template<std::size_t N>
+        bool openFiles(const std::array<const char*, N>& filenames) noexcept;
+        virtual void write(const char* data, std::size_t n, std::size_t userIndex) noexcept;
+        void closeFiles();
+        ~FileWriter();
+        private:
+        std::vector<FILE*> outputs; 
+    };
+
+
+    ///}@
+
+
 
     private:
     
-    static const int buffer_gran = 0x10000;  // read buffer alignment
-    static const int default_chunk_size = buffer_gran * 4; 
+
     //static const int max_tag_length = 0x100000;  // unused yet
    
-    FILE* _input;
-    char* buffer;
+    char* _buffer;
     int _chunkSize;
+    FILE* _input;
+    ErrorCode _errorCode;
     std::size_t _nReadTotal;
-    int _exitCode;
     bool _eof;
-
-    //   Current path: stack of start-tags
-    //   Tags are saved appended to each other in one single std::string
-    //   (_tagStrings). The offset of each tag is _path[level()].
-    //   The offset to the end of tag is _path[level() + 1].
-    //   E.g.: "<root><cat><mouse>" - _tags are {0,0,4,7,12}.
-    //   Two nulls, assigned in on start, are needed as there are no 
-    //   tags on level 0; the level() method returns _path.size() - 2.
+    int _options;
   
-
-    std::vector<std::size_t> _path; 
-    std::string _tagStrings; // start-tag strings 
-    int _entityType;
+    std::string _tags; // stack of start-tags appended in one string 
+    std::vector<std::size_t> _path;  // Stack of tag offsets in _tags
+    
+    EntityType _entityType;
 
     std::string _text;   
     bool _keepEscaped;
@@ -247,59 +279,10 @@ class XmlParser: private char_parsers::chunk_charser<char,XmlParser> {
     bool appendRestOfPI() noexcept;
     bool appendRestOfComment() noexcept;
     bool appendRestOfCDATA() noexcept;
-    int loadTag() noexcept;
-    int loadText() noexcept;
+    EntityType loadTag() noexcept;
+    EntityType loadText() noexcept;
     void pushPrefix() noexcept;
     void popPrefix() noexcept;
 };
-
-
-class Writer {
-  //void writeToBuffer(std::size_t iFile , const char * p, int n) noexcept;
-  //void write(int iFile) noexcept;
-  //void write(int iFile, int pos, int n) noexcept;
-  //void write(int iFile, const char * s, int n) noexcept;
-  //template<int N>
-  //void write(int iFile, const char(&)[N]) noexcept;
-
-    // write
-
-  /*static const int write_buffer_size = 1024UL * 4;*/
-
-  //struct Output {
-  //  FILE* file;
-  //  char* buffer; 
-  //  char* cpos = buffer;    // points at the free space to write into
-  //  char* bufferEnd = buffer; // smth needed anyway for alignment; but bufferEnd will reduce calculations
-  //};
-
- 
-  //std::vector<Output> outputs;
-
- /* void closeFiles() noexcept;*/
-
-  //void write(std::size_t iFile, const char * s, int n) noexcept;
-
-  //void write(std::size_t iFile, const char*) noexcept;
-  //template<int N>
-  //void write(std::size_t iFile, const char(&)[N]) noexcept;
-
-  //bool writeTo(std::size_t iFile, const char*, int) noexcept;
-  //template<int N>
-  //bool writeTo(std::size_t iFile, const char(&)[N]) noexcept;
-
-  //bool writeTo(std::size_t iFile, char) noexcept;
-
-  //bool writeToNonBlank(std::size_t iFile) noexcept;
-  //bool writeToBlank(std::size_t iFile) noexcept;
-
-};
-
-
-
-
-
-
-
 
 

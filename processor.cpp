@@ -1,163 +1,27 @@
-
 #include "processor.h"
 #include <cassert>
 #define _CRT_SECURE_NO_WARNINGS
 
-
 using namespace std;
 using namespace char_parsers;
 
-//
-//void Processor::write(size_t iFile, const char * s, int n) noexcept
-//{
-//  writeToBuffer(iFile, s, n);
-//}
-//
-//void Processor::write(size_t iFile, const char * s) noexcept
-//{
-//  writeToBuffer(iFile, s, strlen(s));
-//}
-//
-//
-//template <int N>
-//void Processor::write(size_t iFile, const char (&s)[N]) noexcept {
-//  writeToBuffer(iFile, (const char*)s, N-1);
-//}
-//
-//
-////  PER-FILE SEARCH WRITING DATA; PPOS = CPOS 
-//
-//bool Processor::writeTo(size_t iFile, const char* s, int n) noexcept {
-//  do {
-//    bool b = moveTo(s, n);
-//    Processor::write(iFile, cpos, (int) (endPos - cpos));
-//    if(b) {
-//      cpos = endPos;
-//      return true;
-//    }
-//  } while(readToBuffer());
-//  return false;
-//}
-//
-//
-//template <int N>
-//bool Processor::writeTo(size_t iFile, const char (&s)[N]) noexcept {
-//  Processor::writeTo(iFile, (const char*)s, N-1);
-//}
-
-//bool Processor::writeTo (size_t iFile, char c) noexcept {
-//  do {
-//      bool b = moveTo(c);
-//      Processor::write(iFile, cpos, (int)(endPos - cpos));
-//      if(b)  {
-//        cpos = endPos;
-//        return true;
-//      }
-//    } while(readToBuffer());
-//  return false;
-//}
-//
-
-
-
-//void Processor::openFiles(const char* path, int nOutputFiles, const char* const(&outputFileNames)[]) noexcept
-//{
-//  input = fopen( path, "rb" );
-//  if(setvbuf(input,  nullptr, _IONBF, 0 ) == 0) 
-//  {
-//    string s (path);
-//    int n = s.find_first_of("/\\") + 1; // if npos then 0
-//    auto  p = outputFileNames;
-//    outputs.reserve(nOutputFiles);
-//    while(outputs.size() != nOutputFiles) 
-//    {
-//      s.replace(n,string::npos,*p, strlen(*p));
-//      ++p;
-//      FILE* f = fopen(&s[0], "wb");
-//      if(setvbuf(f,  nullptr, _IONBF, 0 ) == 0) {
-//        char* p = new char[write_buffer_size];
-//        outputs.push_back({f, p, p, p + write_buffer_size});
-//        continue;
-//      }
-//      err = true; break;
-//    } 
-//    return;
-//  }
-//  err = true;
-//}
-
-//void Processor::writeToBuffer(size_t iFile, const char * s, int n) noexcept
-//{
-//  assert((n > 0) && (iFile < outputs._size()));
-//  Output o = outputs[iFile];
-//  do {
-//    const char* end = min(o.bufferEnd, o.cpos + n);
-//    while(o.cpos != end) {*o.cpos = *s;  ++o.cpos; ++s; --n;}
-//    if(end <= o.bufferEnd) return;
-//    o.cpos = o.buffer;
-//  }
-//  while(_fwrite_nolock((void*) o.buffer, 1, write_buffer_size, o.file) == write_buffer_size);
-//  err = true;
-//}
-//
-//
-//void Writer::openFiles(const char* path, int nOutputFiles, const char* const(&outputFileNames)[]) noexcept
-//{
-//  input = fopen( path, "rb" );
-//  if(setvbuf(input,  nullptr, _IONBF, 0 ) == 0) 
-//  {
-//    string s (path);
-//    int n = s.find_first_of("/\\") + 1; // if npos then 0
-//    auto  p = outputFileNames;
-//    outputs.reserve(nOutputFiles);
-//    while(outputs._size() != nOutputFiles) 
-//    {
-//      s.replace(n,string::npos,*p, strlen(*p));
-//      ++p;
-//      FILE* f = fopen(&s[0], "wb");
-//      if(setvbuf(f,  nullptr, _IONBF, 0 ) == 0) {
-//        char* p = new char[write_buffer_size];
-//        outputs.push_back({f, p, p, p + write_buffer_size});
-//        continue;
-//      }
-//      err = true; break;
-//    } 
-//    return;
-//  }
-//  err = true;
-//}
-//void Processor::closeFiles() noexcept
-//{
-//  for (auto &o : outputs)
-//  {
-//    if(o.file && (fclose(o.file) !=0)) err = true; 
-//    delete[] o.buffer;
-//  }
-//  outputs.clear();
-//  if(input && (fclose(input) !=0)) err = true; 
-//  input = nullptr; 
-//}
-
-
-// reads a chunk from file to buffer, returns n bytes read; 0 = eof
 
 bool XmlParser::loadNextChunk() noexcept
 {
-  size_t nRead = _fread_nolock(buffer, 1, _chunkSize, _input);
-  assign(buffer, nRead);
+  size_t nRead = _fread_nolock(_buffer, 1, _chunkSize, _input);
+  assign(_buffer, nRead);
   _nReadTotal += nRead; 
 
     if (!nRead)
     {
     _eof = true;
-    if(ferror(_input)) _exitCode |= ExitCode::kErrReadFile;
+    if(ferror(_input)) _errorCode = ErrorCode::kErrReadFile;
     return false;
     }
 
   return true;
 }
 
- 
 bool XmlParser::appendRestOfComment() noexcept 
 {   
     while (auto c = append_seek_if(_text, is_eq<'-'>, true)) 
@@ -196,7 +60,7 @@ bool XmlParser::appendRestOfPI() noexcept
 // returns tag code (on error, Element::TagType::kNone = 0)
 
 
-int XmlParser::loadTag() noexcept 
+XmlParser::EntityType XmlParser::loadTag() noexcept 
 {
    _text = '<'; 
    unchecked_skip();
@@ -208,7 +72,7 @@ int XmlParser::loadTag() noexcept
    }
    else if(c == '?') // PI (Processor Instruction): "<?" + (any chars except "?>") + "?>" 
    {
-       if(appendRestOfPI()) return EntityType::kPI;  
+       if(appendRestOfPI()) return EntityType::kPI; 
    }
    else if(c == '!') // comment, or DTD, or CData: "<!" + (any chars, comments or PI's ) + '>' 
    {
@@ -222,8 +86,8 @@ int XmlParser::loadTag() noexcept
 
         if(n == sizeof("--"))  
         {
-            return appendRestOfComment()? EntityType::kComment :
-            EntityType::kEnd;
+            if (appendRestOfComment()) return EntityType::kComment;
+            return EntityType::kEnd;
         }
 
         else if(level() && append_skip_while(_text, "[CDATA[") == sizeof("[CDATA["))    
@@ -278,15 +142,13 @@ int XmlParser::loadTag() noexcept
        // still, TODO: better checks for allowed first character
         if(c != '>' && append_seek_if(_text, (is_eq<'>'>), true))  
         {
-            if(_text[_text.size() - 1] != '/') return EntityType::kPrefix;
+            if(_text[_text.size() - 2] != '/') return EntityType::kPrefix;
             return EntityType::kSelfClosing;
         }
    }
 
    return  EntityType::kEnd;   
 }
-
-
 
 void append_utf8(UChar c, std::string& dst)
 {
@@ -310,18 +172,16 @@ void append_utf8(UChar c, std::string& dst)
 }
 
 
-
-int XmlParser::loadText() noexcept
+XmlParser::EntityType XmlParser::loadText() noexcept
 {
-    _text.clear();
     if (_keepEscaped) 
     {
         auto c = append_seek(_text, '<');
-        return c ? EntityType::kText : EntityType::kEnd;
+        return c ? EntityType::kEscapedText : EntityType::kEnd;
     }
     while(auto c = append_seek_of(_text, "<&"))
     {
-        if (c == '<') return EntityType::kText;
+        if (c == '<') return EntityType::kEscapedText;
         unchecked_appendc(_text); 
         auto offs = _text.size(); // after "...&"
         if (peek() == '#') 
@@ -362,32 +222,19 @@ int XmlParser::loadText() noexcept
     return EntityType::kEnd;
 }
 
-void XmlParser::skipElement() noexcept
-{
-    auto i = level();
-    while(next() && level() >= i) {}
-}
 
-void XmlParser::writeEntity(IWriter & writer, std::size_t userIndex)
-{
-    writer.write(_text.data(), _text.size(), userIndex);
-}
-
-void XmlParser::writeElement(IWriter & writer, bool keepEscaping, std::size_t userIndex)
-{
-}
 
 
 void XmlParser::pushPrefix() noexcept
 {
-    _tagStrings.append(_text);   
-    _path.push_back(_tagStrings.size());
+    _tags.append(_text);   
+    _path.push_back(_tags.size());
 }
 
 void XmlParser::popPrefix() noexcept
 {
     _path.pop_back(); 
-    _tagStrings.erase(_path.back());
+    _tags.erase(_path.back());
 }
 
 bool XmlParser::next() noexcept
@@ -395,9 +242,12 @@ bool XmlParser::next() noexcept
     auto t = _entityType;
     if(t != EntityType::kEnd) 
     {
+        // clear buffer for append() and also to be empty at eof - for loop-copy while next()
+        _text.clear(); 
         // check if current one is a suffix or a self-closing element
         // (self-closing ones are pushed too, for uniformity) and pop it
-        if(t & EntityType::kElementEndMask) 
+        
+        if((int)t & ((int)EntityType::kSelfClosing | (int)EntityType::kSuffix)) 
         {
             popPrefix(); 
         }
@@ -407,24 +257,23 @@ bool XmlParser::next() noexcept
 
         if(c == '<') // tag
         {
-            auto t = loadTag(); 
-            _entityType = t;
-            if(t & EntityType::kElementStartMask) 
+            _entityType = loadTag(); 
+            if(isElement()) 
             {
                 pushPrefix(); // self-closing ones are pushed too, for uniformity
                 return true;
             }
 
-            if (t == EntityType::kEnd) _exitCode |=  ExitCode::kErrTagUnclosed;
+            if (isEnd()) _errorCode =  ErrorCode::kErrTagUnclosed;
 
             if (level()) return true;
 
             // document level: handle end-tags alone or cdata-s
-            if (t == EntityType::kSuffix)
+            if (isSuffix())
             {
                 _entityType = EntityType::kEnd; 
-                _exitCode |= ExitCode::kErrTagUnmatch;
-                return false;
+                _errorCode = ErrorCode::kErrTagUnmatch;
+                return true;
             }
             // another odd thing for the document level would be CDATA, but loadTag() checks
             // for level() - so that if it would appear, it would handled as DTD.
@@ -432,9 +281,9 @@ bool XmlParser::next() noexcept
 
         if(c) // some characters 
         {
-            _entityType = EntityType::kText;
+            _entityType = loadText();
 
-            if(level())  return loadText();
+            if (level())  return true;
 
             // document level; skip anything outside elements as BOM or garbage 
             if (seek('<')) return next(); 
@@ -445,42 +294,40 @@ bool XmlParser::next() noexcept
 
         // eof
         _entityType = EntityType::kEnd;
-        if(level()) _exitCode |= ExitCode::kErrTagUnmatch;
+        if(level()) _errorCode = ErrorCode::kErrTagUnmatch;
         return true;
     }
 
     return false;
 }
 
-
-int XmlParser::process(const char* path, size_t bufferSize) noexcept
+bool XmlParser::process(const char* path, size_t bufferSize) noexcept
 {
     _nReadTotal = 0;
     _eof = false;
-    _tagStrings.clear();
-    _path.assign(2, 0);
+    _tags.clear();
+    _path.assign(2, 0); // to zeros for document level == 0
     _keepEscaped = false;
     _entityType = EntityType::kNone;
 
     _input = fopen(path, "rb");
-    _exitCode = setvbuf(_input,  nullptr, _IONBF, 0 ) == 0 ? 
-        ExitCode::kErrOk : ExitCode::kErrOpenFile;
+    _errorCode = setvbuf(_input,  nullptr, _IONBF, 0 ) == 0 ? 
+        ErrorCode::kErrOk : ErrorCode::kErrOpenFile;
 
-    if(_exitCode == ExitCode::kErrOk) 
+    if(!error()) 
     {
         _chunkSize = (bufferSize + (buffer_gran - 1)) & (~(buffer_gran - 1));
-        buffer = new char[_chunkSize];
+        _buffer = new char[_chunkSize];
 
-        assign(buffer, 0);
+        assign(_buffer, 0);
         process();
 
-        delete[] buffer;     
+        delete[] _buffer;     
     }
 
-    if(_input && fclose(_input) != 0) _exitCode |= ExitCode::kErrCloseFile;
-    return _exitCode;
+    fclose(_input);
+    return !error();
 }
-
 
 
 std::string_view XmlParser::getName(std::size_t idx) const noexcept
@@ -520,20 +367,35 @@ std::string_view XmlParser::getSTagString(std::size_t idx) const noexcept
     assert(idx <= level());
     auto oStart = _path[idx];
     auto oEnd = _path[idx + 1];
-    return std::string_view(_tagStrings.data() + oStart, oEnd - oStart);
+    return std::string_view(_tags.data() + oStart, oEnd - oStart);
 }
 
+template<std::size_t N>
+inline bool XmlParser::FileWriter::openFiles(const std::array<const char*, N>& filenames) noexcept
+{
+    closeFiles();
+    for(auto & fn : filenames)
+    {
+        auto f = fopen(fn, "wb");
+        if(!f) return false;
+        outputs.push_back(f);
+    }
+    return true;
+}
 
+void XmlParser::FileWriter::write(const char * data, std::size_t n, std::size_t userIndex)  noexcept
+{
+  _fwrite_nolock(data, 1, n, outputs[userIndex]);
+}
 
-//const std::string & XmlParser::Element::getEndTagString() noexcept
-//{
-//    if(_endTag.empty())
-//    {
-//       _endTag += '<';
-//       _endTag += '/';
-//       _endTag.append(getName());
-//       _endTag  += '>';
-//    }
-//    return _endTag;
-//}
+void XmlParser::FileWriter::closeFiles()
+{
+    for(auto & f : outputs) { fclose(f);}
+    outputs.clear();
+}
+
+XmlParser::FileWriter::~FileWriter()
+{
+    closeFiles();
+}
 
