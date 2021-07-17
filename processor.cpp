@@ -8,18 +8,22 @@ using namespace char_parsers;
 
 bool XmlParser::loadNextChunk() noexcept
 {
-  size_t nRead = _fread_nolock(_buffer, 1, _chunkSize, _input);
-  assign(_buffer, nRead);
-  _nReadTotal += nRead; 
+  if (_input)
+  {
+      size_t nRead = _fread_nolock(_buffer, 1, _chunkSize, _input);
+      assign(_buffer, nRead);
+      _nReadTotal += nRead; 
 
-    if (!nRead)
-    {
-    _eof = true;
-    if(ferror(_input)) _errorCode = ErrorCode::kErrReadFile;
-    return false;
-    }
+        if (!nRead)
+        {
+        _eof = true;
+        if(ferror(_input)) _errorCode = ErrorCode::kErrReadFile;
+        return false;
+        }
 
-  return true;
+      return true;
+  }
+  return false;
 }
 
 bool XmlParser::appendRestOfComment() noexcept 
@@ -301,8 +305,12 @@ bool XmlParser::next() noexcept
     return false;
 }
 
-bool XmlParser::process(const char* path, size_t bufferSize) noexcept
+
+
+bool XmlParser::openFile(const char* path) noexcept
 {
+    fclose(_input);
+    assign(_buffer, 0);
     _nReadTotal = 0;
     _eof = false;
     _tags.clear();
@@ -313,22 +321,26 @@ bool XmlParser::process(const char* path, size_t bufferSize) noexcept
     _input = fopen(path, "rb");
     _errorCode = setvbuf(_input,  nullptr, _IONBF, 0 ) == 0 ? 
         ErrorCode::kErrOk : ErrorCode::kErrOpenFile;
-
-    if(!error()) 
-    {
-        _chunkSize = (bufferSize + (buffer_gran - 1)) & (~(buffer_gran - 1));
-        _buffer = new char[_chunkSize];
-
-        assign(_buffer, 0);
-        process();
-
-        delete[] _buffer;     
-    }
-
-    fclose(_input);
     return !error();
 }
 
+XmlParser::XmlParser(std::size_t bufferSize) noexcept
+    :_chunkSize((bufferSize + (buffer_gran - 1)) & (~(buffer_gran - 1))),
+    _buffer(new char[_chunkSize])
+{
+}
+
+void XmlParser::closeFile() noexcept
+{
+    fclose(_input);
+    _input = 0;
+}
+
+XmlParser::~XmlParser()
+{
+    fclose(_input);
+    delete[] _buffer;
+}
 
 std::string_view XmlParser::getName(std::size_t idx) const noexcept
 {
@@ -370,15 +382,20 @@ std::string_view XmlParser::getSTagString(std::size_t idx) const noexcept
     return std::string_view(_tags.data() + oStart, oEnd - oStart);
 }
 
-template<std::size_t N>
-inline bool XmlParser::FileWriter::openFiles(const std::array<const char*, N>& filenames) noexcept
+
+bool XmlParser::FileWriter::openFiles(const char* path, std::initializer_list<const char*>filenames) noexcept
 {
-    closeFiles();
-    for(auto & fn : filenames)
+    std::string s = path;
+    auto pos = s.size();
+    for(auto & fname : filenames)
     {
-        auto f = fopen(fn, "wb");
+        s += ('\\');
+        s.append(fname);
+        s += ('\0');
+        auto f = fopen(s.data(), "wb");
         if(!f) return false;
         outputs.push_back(f);
+        s.erase(pos);
     }
     return true;
 }

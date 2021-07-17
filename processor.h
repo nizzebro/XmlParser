@@ -8,10 +8,28 @@
 class XmlParser: private char_parsers::chunk_charser<char,XmlParser> {
 
     friend class char_parsers::chunk_charser<char, XmlParser>; 
+    static const int buffer_gran = 0x10000;  // read buffer alignment
 
     public:
-    static const int buffer_gran = 0x10000;  // read buffer alignment
+   
     static const int default_chunk_size = buffer_gran * 4; 
+
+    /// Constructor. Allocates memory for the file buffer.
+    ///\ param bufferSize Size of file buffer.
+    XmlParser(std::size_t bufferSize = default_chunk_size) noexcept;
+
+    /// Opens a file for processing. A previous file will be closed.  
+    ///\ param path Full path to the file.
+    /// \return True if opened succesfully, false otherwise
+    bool openFile(const char* path) noexcept;
+
+    /// Closes the opened file. This is done automatically by openFile 
+    /// and destructor.
+    void closeFile() noexcept;
+
+    /// Destructor. Closes any opened file and frees the buffer.
+    ~XmlParser();
+
 
     /// Values for processing options, bits are combined.
     struct Options
@@ -32,8 +50,8 @@ class XmlParser: private char_parsers::chunk_charser<char,XmlParser> {
     enum struct ErrorCode 
     {
         kErrOk = 0,             /// No errors 
-        kErrOpenFile = 1,       /// Can't open the file 
-        kErrReadFile    = 2 ,        /// Can't read from file.
+        kErrOpenFile = 1,
+        kErrReadFile  = 2,        /// Can't read from file.
         kErrTagUnclosed = 4,    /// A tag without the closing brace met.
         kErrTagUnmatch = 8     /// An end-tag missing.
     };
@@ -51,10 +69,6 @@ class XmlParser: private char_parsers::chunk_charser<char,XmlParser> {
         kComment = 64,          /// Comment
         kDTD = 128,             /// Document Type Declaration
         kEnd = 256             /// End-of-file or error  
-
-        //kElementEndMask     = kSuffix | kSelfClosing,
-        //kTextEntityMask     = kEscapedText | kCData
-
     }; 
 
     /// Atribute of element
@@ -64,15 +78,7 @@ class XmlParser: private char_parsers::chunk_charser<char,XmlParser> {
     };
 
 
-    ///@{ Running and getting current state
-
-    /// Launcher: opens file; on success, calls virtual void process() 
-    /// \param bufferSize Desired size of the data chunk read by from file.
-    /// \return True if no error, false otherwise
-    bool process(const char* path, std::size_t bufferSize = default_chunk_size) noexcept;
-
-    /// Callback to implement; all the data is accessed from it */
-    virtual void process() = 0;
+    ///@{ Current state
 
     /// True: end-of-file, can't continue.
     bool eof() const noexcept {return _eof;}  
@@ -240,11 +246,11 @@ class XmlParser: private char_parsers::chunk_charser<char,XmlParser> {
     class FileWriter
     {
         public:
-        template<std::size_t N>
-        bool openFiles(const std::array<const char*, N>& filenames) noexcept;
-        virtual void write(const char* data, std::size_t n, std::size_t userIndex) noexcept;
+        bool openFiles(const char* path, std::initializer_list<const char*>filenames) noexcept;
         void closeFiles();
         ~FileWriter();
+
+        virtual void write(const char* data, std::size_t n, std::size_t iFile) noexcept;
         private:
         std::vector<FILE*> outputs; 
     };
