@@ -32,5 +32,5 @@ Currently supports utf-8 only.
         {
             std::cout << getText(); // the tag's text
         }
-     }
+    }
     parser.closeFile(); 
