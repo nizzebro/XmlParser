@@ -1,5 +1,7 @@
 # XmlParser
-A simple C++ class for fast stream parsing XML files with a minimum overhead.
+A simple C++ class for fast parsing XML files, aimed at a maximum speed and minimum overhead. <br>
+Works as stream with buffer which reads chunks of fixed-size. Entities are processed one-by-one.  <br>
+Currently supports utf-8 only.
 
     XmlParser parser;
     parser.openFile("D:\sample.xml");
@@ -12,9 +14,9 @@ A simple C++ class for fast stream parsing XML files with a minimum overhead.
                 std::cout << a.name << '=' << a.value << '\n';
             }
             auto i = getLevel();
-            while(next(i)) // until </fruits> (self-closing <fruits/> returns false immediately)
+            while(next(i)) // until </fruits>; as for <fruits/>, will return false immediately
             {
-                if(isText("apples")) // text of <apple>? 
+                if(isText("apples")) // a text block of an <apple> element ? 
                 {
                     std::cout << "The text of <apples> : " << '\n' << getText() << '\n';
                     for(auto & elem : getPath())
@@ -30,5 +32,5 @@ A simple C++ class for fast stream parsing XML files with a minimum overhead.
         {
             std::cout << getText(); // the tag's text
         }
-     }
+    }
     parser.closeFile(); 
