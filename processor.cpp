@@ -10,7 +10,7 @@ using namespace char_parsers;
 
 bool XmlParser::loadNextChunk() noexcept
 {
-    // no file checks here; rely on EntityType::kEnd which prevents next()
+    // no file checks here; rely on ItemType::kEnd which prevents next()
     size_t nRead = _fread_nolock(_buffer, 1, _chunkSize, _input);
     assign(_buffer, nRead);
     _nReadTotal += nRead; 
@@ -60,7 +60,7 @@ bool XmlParser::appendRestOfPI() noexcept
 // returns tag code (on error, Element::TagType::kBegin = 0)
 
 
-XmlParser::EntityType XmlParser::loadTag() noexcept 
+XmlParser::ItemType XmlParser::loadTag() noexcept 
 {
    _text = '<'; 
    unchecked_skip();
@@ -68,11 +68,11 @@ XmlParser::EntityType XmlParser::loadTag() noexcept
    if(c == '/') // End-tag: "</" + (any chars except '>')  + '>' 
    {
        if(append_seek_if(_text, is_eq<'>'>, true))
-           return EntityType::kSuffix;
+           return ItemType::kSuffix;
    }
    else if(c == '?') // PI (Processor Instruction): "<?" + (any chars except "?>") + "?>" 
    {
-       if(appendRestOfPI()) return EntityType::kPI; 
+       if(appendRestOfPI()) return ItemType::kPI; 
    }
    else if(c == '!') // comment, or DTD, or CData: "<!" + (any chars, comments or PI's ) + '>' 
    {
@@ -86,20 +86,20 @@ XmlParser::EntityType XmlParser::loadTag() noexcept
 
         if(n == 2)  
         {
-            if (appendRestOfComment()) return EntityType::kComment;
-            return EntityType::kEnd;
+            if (appendRestOfComment()) return ItemType::kComment;
+            return ItemType::kEnd;
         }
 
-        else if(level() && append_skip_while(_text, "[CDATA[") == 7)    
+        else if(getLevel() && append_skip_while(_text, "[CDATA[") == 7)    
         {  
             if(_options & Options::kKeepCDATAtags) _text.clear();
 
             if (appendRestOfCDATA())
             {
                 if(_options & Options::kKeepCDATAtags) _text.erase(_text.size() - 3); 
-                return  EntityType::kCData; 
+                return  ItemType::kCData; 
             }
-            return EntityType::kEnd;
+            return ItemType::kEnd;
         }
 
         // DTD
@@ -130,8 +130,8 @@ XmlParser::EntityType XmlParser::loadTag() noexcept
             }
             else // '...>'
             {  
-                if((--iNested) == 0) return EntityType::kDTD;
-                // // TODO or not : if level() error - DTD shouldn't appear inside elements.
+                if((--iNested) == 0) return ItemType::kDTD;
+                // // TODO or not : if getLevel() error - DTD shouldn't appear inside elements.
 
             } // end if '<' or '>'
         } 
@@ -142,12 +142,12 @@ XmlParser::EntityType XmlParser::loadTag() noexcept
        // still, TODO: better checks for allowed first character
         if(c != '>' && append_seek_if(_text, (is_eq<'>'>), true))  
         {
-            if(_text[_text.size() - 2] != '/') return EntityType::kPrefix;
-            return EntityType::kSelfClosing;
+            if(_text[_text.size() - 2] != '/') return ItemType::kPrefix;
+            return ItemType::kSelfClosing;
         }
    }
 
-   return  EntityType::kEnd;   
+   return  ItemType::kEnd;   
 }
 
 void append_utf8(UChar c, std::string& dst)
@@ -172,16 +172,16 @@ void append_utf8(UChar c, std::string& dst)
 }
 
 
-XmlParser::EntityType XmlParser::loadText() noexcept
+XmlParser::ItemType XmlParser::loadText() noexcept
 {
     if (_options & Options::kKeepMnenonics) 
     {
         auto c = append_seek(_text, '<');
-        return c ? EntityType::kEscapedText : EntityType::kEnd;
+        return c ? ItemType::kEscapedText : ItemType::kEnd;
     }
     while(auto c = append_seek_of(_text, "<&"))
     {
-        if (c == '<') return EntityType::kEscapedText;
+        if (c == '<') return ItemType::kEscapedText;
         unchecked_appendc(_text); 
         auto offs = _text.size(); // after "...&"
         if (peek() == '#') 
@@ -219,23 +219,10 @@ XmlParser::EntityType XmlParser::loadText() noexcept
         _text += cc;
     }
 
-    return EntityType::kEnd;
+    return ItemType::kEnd;
 }
 
 
-
-
-void XmlParser::pushElement() noexcept
-{
-    _tags.append(_text);   
-    _path.push_back(_tags.size());
-}
-
-void XmlParser::popElement() noexcept
-{
-    _path.pop_back(); 
-    _tags.erase(_path.back());
-}
 
 bool XmlParser::next() noexcept
 {
@@ -246,51 +233,51 @@ bool XmlParser::next() noexcept
         // check if current one is a suffix or a self-closing element
         // (self-closing ones are pushed too, for uniformity) and pop it
         
-        if(isElementEnd())  popElement(); 
+        if(isElementEnd())  _path.popItem(); 
 
         // skip ascii blanks
         auto c = seek_if(is_gt<' '>); 
 
         if(c == '<') // tag
         {
-            _entityType = loadTag(); 
+            _itemType = loadTag(); 
             if(isElement()) 
             {
-                pushElement(); // self-closing ones are pushed too, for uniformity
+                _path.pushItem(_text) ; // self-closing ones are pushed too, for uniformity
                 return true;
             }
 
             if (isEnd()) _errorCode =  ErrorCode::kErrTagUnclosed;
 
-            if (level()) return true;
+            if (getLevel()) return true;
 
             // document level: handle end-tags alone 
             if (isSuffix())
             {
-                _entityType = EntityType::kEnd; 
+                _itemType = ItemType::kEnd; 
                 _errorCode = ErrorCode::kErrTagUnmatch;
                 return true;
             }
             // another odd thing for the document level would be CDATA, but loadTag() checks
-            // for level() - so that if it appears here, it is handled as DTD...
+            // for getLevel() - so that if it appears here, it is handled as DTD...
         }
 
         if(c) // some characters 
         {
-            _entityType = loadText();
+            _itemType = loadText();
 
-            if (level())  return true;
+            if (getLevel())  return true;
 
             // document level; skip anything outside elements as BOM or garbage 
             if (seek('<')) return next(); 
             // eof, no errors
-            _entityType = EntityType::kEnd; 
+            _itemType = ItemType::kEnd; 
             return true;
         }
 
         // eof
-        _entityType = EntityType::kEnd;
-        if(level()) _errorCode = ErrorCode::kErrTagUnmatch;
+        _itemType = ItemType::kEnd;
+        if(getLevel()) _errorCode = ErrorCode::kErrTagUnmatch;
         return true;
     }
 
@@ -307,8 +294,7 @@ XmlParser::XmlParser(std::size_t bufferSize) noexcept :
     _nReadTotal(0),     
     _eof(false),
     _options(Options::kDefault),
-    _entityType(EntityType::kEnd),  // the most important; prevents next()
-    _tags(),
+    _itemType(ItemType::kEnd),  // the most important; prevents next()
     _path(),
     _text()
 {
@@ -325,7 +311,7 @@ bool XmlParser::openFile(const char* path) noexcept
     _input = fopen(path, "rb");
     if(setvbuf(_input,  nullptr, _IONBF, 0 ) == 0)
     {
-        _entityType = EntityType::kBegin; // allows parsing
+        _itemType = ItemType::kBegin; // allows parsing
         return true;
     }
     _input = 0;
@@ -341,8 +327,7 @@ void XmlParser::closeFile() noexcept
         _errorCode = ErrorCode::kErrOk;
         _nReadTotal = 0;
         _eof = false;
-        _entityType = EntityType::kEnd;  // prevents next()
-        _tags.clear();
+        _itemType = ItemType::kEnd;  // prevents next()
         _path.clear();
         _text.clear();
         assign(_buffer, 0);
@@ -397,78 +382,70 @@ std::vector<XmlParser::Attribute> XmlParser::getAttributesFromTag(std::string_vi
     return std::move(v);
 }
 
+std::string_view XmlParser::Path::reference::getStartTag() const noexcept
+{
+    return *this;
+}
+
+std::string_view XmlParser::Path::reference::getName() const noexcept
+{
+    return getNameFromTag(*this);
+}
+
+bool XmlParser::Path::reference::hasAttributes() const noexcept
+{
+    return hasTagAttributes(*this);
+}
+
+std::vector<XmlParser::Attribute> XmlParser::Path::reference::getAttributes() const noexcept
+{
+    return getAttributesFromTag(*this);
+}
+
+XmlParser::Path::reference XmlParser::Path::operator[](std::size_t n) const noexcept
+{
+    n = std::min(n, _offsets.size());
+    auto oEnd = n >= 1? _offsets[n - 1] : 0;
+    auto oStart = n >= 2? _offsets[n - 2] : 0;
+    return reference(_tags.data() + oStart, oEnd - oStart);
+}
+
+void XmlParser::Path::pushItem(const std::string& s) noexcept
+{
+    _tags.append(s);   
+    _offsets.push_back(_tags.size());
+}
+
+void XmlParser::Path::popItem() noexcept
+{
+    _offsets.pop_back(); 
+    _tags.erase(_offsets.back());
+}
 
 std::string_view XmlParser::getStartTag() const noexcept
 {
-    return getStartTag(level());
+    return getPath()[getLevel()].getStartTag();
 }
 
 std::string_view XmlParser::getName() const noexcept
 {
-    return getName(level());
+    return getPath()[getLevel()].getName();
 }
 
 bool XmlParser::hasAttributes() const noexcept
 {
-    return hasAttributes(level());
+    return getPath()[getLevel()].hasAttributes();
 }
 
 std::vector<XmlParser::Attribute> XmlParser::getAttributes() const noexcept
 {
-    return getAttributes(level());
-}
-
-std::string_view XmlParser::getParentStartTag() const noexcept
-{
-    auto i = level();
-    return getStartTag(i? i - 1 : 0);
-}
-
-std::string_view XmlParser::getParentName() const noexcept
-{
-    auto i = level();
-    return getName(i? i - 1 : 0);
-}
-
-bool XmlParser::hasParentAttributes() const noexcept
-{
-    auto i = level();
-    return hasAttributes(i? i - 1 : 0);
-}
-
-std::vector<XmlParser::Attribute> XmlParser::getParentAttributes() const noexcept
-{
-    auto i = level();
-    return getAttributes(i? i - 1 : 0);
-}
-
-std::string_view XmlParser::getStartTag(std::size_t lvl) const noexcept
-{
-    assert(lvl <= level());
-    auto oEnd = lvl >= 1? _path[lvl - 1] : 0;
-    auto oStart = lvl >= 2? _path[lvl - 2] : 0;
-    return std::string_view(_tags.data() + oStart, oEnd - oStart);
-}
-
-std::string_view XmlParser::getName(std::size_t lvl) const noexcept
-{
-    return getNameFromTag(getStartTag(lvl));
-}
-
-bool XmlParser::hasAttributes(std::size_t lvl) const noexcept
-{
-    return hasTagAttributes(getStartTag(lvl));
-}
-
-std::vector<XmlParser::Attribute> XmlParser::getAttributes(std::size_t lvl) const noexcept
-{
-    return getAttributesFromTag(getStartTag(lvl));
+    return getPath()[getLevel()].getAttributes();
 }
 
 
 //=====================     Write    ==================================//
 
-bool XmlParser::writeEntity(IWriter & writer, std::size_t userIndex) 
+bool XmlParser::writeItem(IWriter & writer, std::size_t userIndex) 
 {
     writer.write(_text.data(), _text.size(), userIndex);
     return next();
@@ -476,8 +453,8 @@ bool XmlParser::writeEntity(IWriter & writer, std::size_t userIndex)
 
 void XmlParser::writeElement(IWriter & writer, std::size_t userIndex)
 {
-    auto lvl = level();
-    while (!(isSuffix() && level() == lvl) && writeEntity(writer, userIndex)) 
+    auto lvl = getLevel();
+    while (!(isSuffix() && getLevel() == lvl) && writeItem(writer, userIndex)) 
     {
     } 
 }
@@ -519,3 +496,5 @@ XmlParser::FileWriter::~FileWriter()
 {
     closeFiles();
 }
+
+

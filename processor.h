@@ -57,7 +57,7 @@ class XmlParser: private char_parsers::chunk_charser<char,XmlParser> {
     };
 
     /// Types of entities
-    enum struct EntityType 
+    enum struct ItemType 
     {
                      
         kEnd = 0,               /// End-of-file or error
@@ -78,6 +78,50 @@ class XmlParser: private char_parsers::chunk_charser<char,XmlParser> {
         std::string_view value;
     };
 
+
+    struct Path 
+    {
+        struct reference: std::string_view
+        {
+            using std::string_view::string_view;
+            /// gets start-tag's text;
+            std::string_view getStartTag() const noexcept;
+            /// gets start-tag's name
+            std::string_view getName() const noexcept;
+            ///  Returns true if start-tag has attributes
+            bool hasAttributes() const noexcept;
+            /// gets start-tag's attributes
+            std::vector<Attribute> getAttributes() const noexcept;
+        };
+        struct iterator
+        {
+            bool operator!=(const iterator& rhs) const noexcept { return _idx != rhs._idx; }
+            void operator++() noexcept { ++_idx; }
+            const Path::reference operator*() const noexcept { return _path[_idx]; }
+            private:
+            friend typename XmlParser::Path;
+            iterator(const Path& path, std::size_t i):_path(path), _idx(i){}
+            const Path& _path;
+            std::size_t _idx;
+        };
+        // Checks if path is empty
+        bool empty() const noexcept{ return _offsets.empty(); }
+        // Gets the number of elements in path
+        std::size_t size() const noexcept{ return _offsets.size(); }
+
+        iterator begin() const noexcept {return iterator(*this, 0);}
+        iterator end() const noexcept {return iterator(*this, _offsets.size());}
+        // Gets an element; safe: returns empty string when out-of-bounds.
+        reference operator[](std::size_t) const noexcept;
+        private:
+        Path(): _offsets(), _tags() {}
+        std::vector<std::size_t> _offsets;
+        std::string _tags;
+        void pushItem(const std::string& s) noexcept;
+        void popItem()  noexcept;
+        void clear()  noexcept { _offsets.clear(); _tags.clear(); }
+        friend typename XmlParser;
+    };
 
     ///@{ Current state of the processor
 
@@ -100,68 +144,68 @@ class XmlParser: private char_parsers::chunk_charser<char,XmlParser> {
     ///}
 
     ///@{
-    /** Type and text of current entity */
+    /** Type and text of current item */
 
-    const EntityType& getEntityType() const noexcept { return _entityType; }
+    const ItemType& getItemType() const noexcept { return _itemType; }
 
-    /// Checks if the entity is either a start-tag or a self-closing tag.
+    /// Checks if the item is either a start-tag or a self-closing tag.
     bool isElement() const noexcept 
-    {return ((int)_entityType & ((int)EntityType::kPrefix | 
-        (int)EntityType::kSelfClosing));}
-    /// Checks if the entity is element of specific name.
+    {return ((int)_itemType & ((int)ItemType::kPrefix | 
+        (int)ItemType::kSelfClosing));}
+    /// Checks if the item is element of specific name.
 
-    /// Checks if the entity is a self-closing tag.
+    /// Checks if the item is a self-closing tag.
     bool isSelfClosing() const noexcept 
-    {return (_entityType == EntityType::kSelfClosing);}
+    {return (_itemType == ItemType::kSelfClosing);}
   
     /// Same as ! isSelfClosing().
     bool isPrefix() const noexcept 
-    {return (_entityType == EntityType::kPrefix);}
+    {return (_itemType == ItemType::kPrefix);}
 
-    /// Checks if the entity is an end-tag.
+    /// Checks if the item is an end-tag.
     bool isSuffix() const noexcept 
-    {return (_entityType == EntityType::kSuffix);}
+    {return (_itemType == ItemType::kSuffix);}
 
-    /// Checks if the entity is either an end-tag or a self-closing tag.
+    /// Checks if the item is either an end-tag or a self-closing tag.
     bool isElementEnd() const noexcept 
-    {return ((int)_entityType & ((int)EntityType::kSuffix |
-        (int)EntityType::kSelfClosing));}
+    {return ((int)_itemType & ((int)ItemType::kSuffix |
+        (int)ItemType::kSelfClosing));}
 
-    /// Checks if the entity is a text block, including CDATA blocks.
+    /// Checks if the item is a text block, including CDATA blocks.
     bool isText() const noexcept 
-    {return ((int)_entityType & ((int)EntityType::kEscapedText | 
-        (int)EntityType::kCData));}
+    {return ((int)_itemType & ((int)ItemType::kEscapedText | 
+        (int)ItemType::kCData));}
 
-    /// Checks if the entity is a CDATA block.
+    /// Checks if the item is a CDATA block.
     bool isCDATA() const noexcept 
-    {return (_entityType == EntityType::kCData);}
+    {return (_itemType == ItemType::kCData);}
     
     /// Same as ! isCDATA().
     bool isEscapedText() const noexcept 
-    {return (_entityType == EntityType::kEscapedText);}
+    {return (_itemType == ItemType::kEscapedText);}
     
-    /// True if the entity  is a Processor Instruction.
+    /// True if the item  is a Processor Instruction.
     bool isPI() const noexcept 
-    {return (_entityType == EntityType::kPI);}
+    {return (_itemType == ItemType::kPI);}
 
-    /// True if the entity  is a comment.
+    /// True if the item  is a comment.
     bool isComment() const noexcept 
-    {return (_entityType == EntityType::kComment);}
+    {return (_itemType == ItemType::kComment);}
 
-    /// True if the entity is a Document Type Declaration.
+    /// True if the item is a Document Type Declaration.
     bool isDTD() const noexcept 
-    {return (_entityType == EntityType::kDTD);}
+    {return (_itemType == ItemType::kDTD);}
 
     /// True if eof or error, same effect as ! good().
     /// further processing is not available.
     bool isEnd() const noexcept 
-    {return (_entityType == EntityType::kEnd); }
+    {return (_itemType == ItemType::kEnd); }
     
 
-    /// Text of the current entity.
+    /// Text of the current item.
     /// \detail For a text block, gets the text; for any kind of tag
     /// gets the tag's text including angle brackets.
-    /// For EntityType::kEnd, the text is either empty or contains 
+    /// For ItemType::kEnd, the text is either empty or contains 
     /// an incomplete tag which produced error.
     const std::string& getText() const noexcept { return _text; }
 
@@ -174,16 +218,15 @@ class XmlParser: private char_parsers::chunk_charser<char,XmlParser> {
     /// Current element's start tag
     std::string_view getStartTag() const noexcept;
 
-    /// Current element's name; valid while current entity
+    /// Current element's name; valid while current item
     ///   is this element's start-tag, text, comment, PI or end-tag
     std::string_view getName() const noexcept;
 
-
     ///  True if current element has attributes; valid while current
-    ///  entity is this element's start-tag, text, comment, PI or end-tag
+    ///  item is this element's start-tag, text, comment, PI or end-tag
     bool hasAttributes() const noexcept;
 
-    ///  Current element's attributes; valid while current entity
+    ///  Current element's attributes; valid while current item
     ///   is this element's start-tag, text, comment, PI or end-tag
     std::vector<Attribute> getAttributes() const noexcept;
 
@@ -192,55 +235,32 @@ class XmlParser: private char_parsers::chunk_charser<char,XmlParser> {
     ///@{
     /** Current path, level, and parent elements's properties. */
 
-    /// Path depth; 0: document level; 1: root element etc.
-    /// \detail 
+    /// \brief Path depth; 0: document level; 1: root element etc.
+    /// \detail Entering an element increments the level:
+    ///
     ///     <?xml....?>         // level = 0
     ///     <!DOCTYPE...>       // level = 0
-    ///     <!-- bla bla -->    // level = 0
     ///     <root>              // level = 1 - new element
     ///       bla bla           // level = 1
     ///       <!-- bla bla -->  // level = 1
     ///       <?php...?>        // level = 1
-    ///       <group>           // level = 2 - new element
+    ///       <nested>          // level = 2 - new element
     ///         bla bla         // level = 2
-    ///         <thingy/>       // level = 3 - new, even self-closing
+    ///         <empty/>        // level = 3 - new, even self-closing
     ///         bla bla         // level = 2 - back
-    ///         <group>         // level = 3 
+    ///         <empty/>        // level = 3 - and forth...
+    ///         <group>         // level = 3 - same nesting level
     ///           bla bla       // level = 3
     ///         </group>        // level = 3
-    ///         <thingy/>       // level = 3 
-    ///       </group>          // level = 2 - back
+    ///       </nested>         // level = 2 - back
     ///     </root>             // level = 1 - back
     ///                         // level = 0 - EOF
 
-    std::size_t level() const noexcept { return _path.size();}
+    /// Returns  current path as the stack of start-tags 
+    const Path& getPath() const noexcept { return _path; }
 
-    /// Full start-tag string enclosing element or empty string if root
-    std::string_view getParentStartTag() const noexcept;
-
-    /// Name of enclosing element or empty string if root
-    std::string_view getParentName() const noexcept;
-
-    ///  True if enclosing element has attributes
-    bool hasParentAttributes() const noexcept;
-
-    /// Attributes of enclosing element or empty vector if root
-    std::vector<Attribute> getParentAttributes() const noexcept;
-
-    /// Start-tag string of an upper-level element of current path
-    ///\param index should be <= level(); if 0, returns an empty string
-    std::string_view getStartTag(std::size_t lvl) const noexcept;
-
-    /// Name of an upper-level element of current path
-    ///\param index should be <= level(); if 0, returns an empty string
-    std::string_view getName(std::size_t lvl) const noexcept;
-
-   ///  True if an upper-level element has attributes
-    bool hasAttributes(std::size_t lvl) const noexcept;
-
-    /// Attributes of an upper-level element of current path
-    ///\param index should be <= level(); if 0, returns an empty string
-    std::vector<Attribute> getAttributes(std::size_t lvl) const noexcept;
+    /// Returns current path depth; same as getPath().size()
+    std::size_t getLevel() const noexcept { return getPath().size();}
 
 
     ///}@
@@ -249,7 +269,7 @@ class XmlParser: private char_parsers::chunk_charser<char,XmlParser> {
     ///@{
     /** Traversing entities */
 
-    /// Loads next entity.
+    /// Loads next item.
     /// \return False if EOF is reached or data error occured -
     /// in either case furher processing is not possible.
     /// \detail 
@@ -261,12 +281,12 @@ class XmlParser: private char_parsers::chunk_charser<char,XmlParser> {
     
     bool next() noexcept;
 
-    /// Loads next entity in bounds of a specified level.
+    /// Loads next item in bounds of a specified level.
     /// \param level Level. 
     /// \return False if the end-tag of an element of this level or EOF is 
     /// reached, or data error ocurred. 
     bool next(std::size_t lvl) noexcept 
-    { return !(isElementEnd() && level() == lvl) ? next() : false;}
+    { return !(isElementEnd() && getLevel() == lvl) ? next() : false;}
 
 
     ///}@
@@ -298,8 +318,8 @@ class XmlParser: private char_parsers::chunk_charser<char,XmlParser> {
             std::vector<FILE*> outputs; 
     };
 
-    /// Passes current entity's text to IWriter and performs next().
-    bool writeEntity(IWriter& writer, std::size_t userIndex);
+    /// Passes current item's text to IWriter and performs next().
+    bool writeItem(IWriter& writer, std::size_t userIndex);
   
 
     /// Passes the current element's content, including all tags, to IWriter and
@@ -324,19 +344,16 @@ class XmlParser: private char_parsers::chunk_charser<char,XmlParser> {
     bool _eof;
     int _options;
   
-    std::string _tags; // stack of start-tags appended in one string 
-    std::vector<std::size_t> _path;  // Stack of tag offsets in _tags 
-    EntityType _entityType;
+    Path _path;  // Stack of start-tags 
+    ItemType _itemType;
     std::string _text;   
 
     bool loadNextChunk() noexcept;
     bool appendRestOfPI() noexcept;
     bool appendRestOfComment() noexcept;
     bool appendRestOfCDATA() noexcept;
-    EntityType loadTag() noexcept;
-    EntityType loadText() noexcept;
-    void pushElement() noexcept;
-    void popElement() noexcept;
+    ItemType loadTag() noexcept;
+    ItemType loadText() noexcept;
     static std::string_view getNameFromTag(std::string_view) noexcept;
     static bool hasTagAttributes(std::string_view s) noexcept;
     static std::vector<Attribute> getAttributesFromTag(std::string_view) 
