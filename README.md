@@ -18,8 +18,8 @@ Currently supports utf-8 only.
             {
                 if(isText("apples")) // a text block of an <apples> element ? 
                 {
-                    std::cout << "The text of <apples> : " << '\n' << getText() << '\n';
-                    for(auto & elem : getPath())
+                    std::cout << "The text of <apples> : " << '\n' << text << '\n'; 
+                    for(auto & elem : path)
                     {
                         std::cout << elem.getName(i) << '\\'; // path
                     }
@@ -30,7 +30,7 @@ Currently supports utf-8 only.
         }
         else if(isPI() || isDTD() || isComment())
         {
-            std::cout << getText(); // the tag's text
+            std::cout << text; // the tag's text
         }
     }
     parser.closeFile(); 
