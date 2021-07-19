@@ -17,9 +17,9 @@ A simple C++ class for fast stream parsing XML files with a minimum overhead.
                 if(isText("apples")) // text of <apple>? 
                 {
                     std::cout << "The text of <apples> : " << '\n' << getText() << '\n';
-                    for(int i = 0; i <= getLevel(); ++i)
+                    for(auto & elem : getPath())
                     {
-                        std::cout << getName(i) << '\\'; // path
+                        std::cout << elem.getName(i) << '\\'; // path
                     }
                     std::cout << '\n';
                 }
