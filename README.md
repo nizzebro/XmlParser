@@ -11,7 +11,7 @@ Simple C++ class to parse XML files (utf-8 at this moment); stream-like; minimum
             { 
                 std::cout << a.name << '=' << a.value << '\n';
             }
-            auto i = level();
+            auto i = getLevel();
             while(next(i)) // iterates until the end-tag of current nesting level
             {
                 if(isText() && getName() == "item") // getName() is the element's name
