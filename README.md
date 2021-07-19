@@ -3,34 +3,34 @@ A simple C++ class for fast parsing XML files, aimed at a maximum speed and mini
 Works as a stream with buffer which reads fixed-sized chunks. Entities are processed one-by-one.  <br>
 Currently supports utf-8 only.
 
-    XmlParser parser;
-    parser.openFile("D:\sample.xml");
-    while(next())
+    XmlParser p;
+    p.openFile("D:\sample.xml");
+    while(p.next())
     {
-        if(isElement("fruits"))
+        if(p.isElement("fruits"))
         {
-            for(auto & a : getAttributes())
+            for(auto & a : p.getAttributes())
             { 
                 std::cout << a.name << '=' << a.value << '\n';
             }
-            auto i = getLevel();
-            while(next(i)) // until </fruits>; as for <fruits/>, will return false immediately
+            auto i = p.getLevel();
+            while(p.next(i)) // until </fruits>; as for <fruits/>, will return false immediately
             {
-                if(isText("apples")) // a text block of an <apples> element ? 
+                if(p.isText("apples")) // a text block of an <apples> element ? 
                 {
-                    std::cout << "The text of <apples> : " << '\n' << text << '\n'; 
-                    for(auto & elem : path)
+                    std::cout << "The text of <apples> : " << '\n' << p.text << '\n'; 
+                    for(auto & elem : p.path)
                     {
                         std::cout << elem.getName(i) << '\\'; // path
                     }
                     std::cout << '\n';
                 }
             }
-            std::cout << "the end-tag </fruits> reached" << '\n';
+            std::cout << "the end-tag </fruits> has been reached" << '\n';
         }
-        else if(isPI() || isDTD() || isComment())
+        else if(p.isPI() || p.isDTD() || p.isComment())
         {
-            std::cout << text; // the tag's text
+            std::cout << p.text; // the tag's text
         }
     }
-    parser.closeFile(); 
+    p.closeFile(); 
