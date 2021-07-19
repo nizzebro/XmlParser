@@ -1,25 +1,34 @@
 # XmlParser
-Simple C++ class to parse XML files (utf-8 at this moment); stream-like; minimum overhead.
+A simple C++ class for fast stream parsing XML files with a minimum overhead.
 
     XmlParser parser;
     parser.openFile("D:\sample.xml");
     while(next())
     {
-        if(isElement() && getName() == "category")
+        if(isElement("fruits"))
         {
             for(auto & a : getAttributes())
             { 
                 std::cout << a.name << '=' << a.value << '\n';
             }
-            auto i = level();
-            while(next(i)) // iterates until the end-tag of current nesting level
+            auto i = getLevel();
+            while(next(i)) // until </fruits> (self-closing <fruits/> returns false immediately)
             {
-                if(isText() && getName() == "item") // getName() is the element's name
+                if(isText("apples")) // text of <apple>? 
                 {
-                    std::cout << "The text of <item> is: " << '\n' << getText() << '\n';
+                    std::cout << "The text of <apples> : " << '\n' << getText() << '\n';
+                    for(auto & elem : getPath())
+                    {
+                        std::cout << elem.getName(i) << '\\'; // path
+                    }
+                    std::cout << '\n';
                 }
             }
-            std::cout << "</category> is reached" << '\n';
+            std::cout << "the end-tag </fruits> reached" << '\n';
+        }
+        else if(isPI() || isDTD() || isComment())
+        {
+            std::cout << getText(); // the tag's text
         }
      }
     parser.closeFile(); 
