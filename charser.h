@@ -35,14 +35,9 @@ auto constexpr is_graph =  [](UChar ch){return std::isgraph(ch);};
 auto constexpr is_cntrl =  [](UChar ch){return std::iscntrl(ch);};
 auto constexpr is_digit  =  [](UChar ch){return std::isdigit(ch);};
 
-/// Stacking character-checking unary predicates.
-template <typename q>
-auto constexpr is_not = [](UChar ch) {return !q(ch);};
-
-template <typename q1, typename q2>
-auto constexpr is_of = [](UChar ch){return q1(ch) || q2(ch);};
 
 using predicate =   std::function<bool(UChar)>;
+
 
 /// Base class for safe text iterators.
 ///\param T Character type
@@ -513,7 +508,7 @@ class basic_charser: public Impl {
     public:
     using base_type = typename Impl;
     using typename base_type::char_type;
-    using stl_string_view = std::basic_string<char_type, std::char_traits<char_type> >;
+    using stl_string_view = std::basic_string_view<char_type, std::char_traits<char_type> >;
     template<typename A> 
     using stl_string = std::basic_string<char_type, std::char_traits<char_type>, A>;
     using base_type::base_type;
