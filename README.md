@@ -1,5 +1,6 @@
 # XmlParser
-A simple C++ class for fast stream parsing XML files with a minimum overhead.
+A simple C++ class for fast parsing XML files with a minimum overhead.
+A stream with buffer, fixed-size chunks. Currently supports utf-8 only.
 
     XmlParser parser;
     parser.openFile("D:\sample.xml");
