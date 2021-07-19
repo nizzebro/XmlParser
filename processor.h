@@ -293,24 +293,26 @@ class XmlParser: private char_parsers::chunk_charser<char,XmlParser> {
     ///@{ Write
 
     /// Interface intended to copy data e.g. to write it to a file
-    struct IWriter
+    class IWriter
     {
+        public:
         /// Callback for data writing functions 
         /// \param data Poiter to the data to write
         /// \param n Size of data, bytes
         /// \param userIndex Can be used e.g.to choose a particular file or data container. 
         virtual void write(const char* data, std::size_t n, std::size_t userIndex) = 0;
+        void write(const std::string_view s, std::size_t userIndex) { write(s.data(), s.size(), userIndex); }
     };
 
     /// A simple IWriter implementation to write to files
-    class FileWriter
+    class FileWriter: public IWriter
     {
         public:
         bool openFiles(std::string dir, std::initializer_list<const char*>filenames) noexcept;
         void closeFiles() noexcept;
         ~FileWriter();
-
         virtual void write(const char* data, std::size_t n, std::size_t iFile) noexcept;
+        using IWriter::write;
         private:
             std::vector<FILE*> outputs; 
     };

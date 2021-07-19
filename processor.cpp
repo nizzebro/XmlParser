@@ -440,7 +440,7 @@ std::vector<XmlParser::Attribute> XmlParser::getAttributes() const noexcept
 
 bool XmlParser::writeItem(IWriter & writer, std::size_t userIndex) 
 {
-    writer.write(_text.data(), _text.size(), userIndex);
+    writer.write(_text, userIndex);
     return next();
 }
 
