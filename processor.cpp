@@ -42,9 +42,6 @@ bool XmlParser::appendRestOfCDATA() noexcept
     return false;    
 }
 
-// appends chars to textBuffer ending with "?>"
-// the curr. position should be next after "<?"
-// returns false on eof
 
 bool XmlParser::appendRestOfPI() noexcept 
 {   
@@ -54,10 +51,6 @@ bool XmlParser::appendRestOfPI() noexcept
     }
     return false;    
 }
-
-// reads tag to textBuffer, advancing position to the next after it
-// the curr. position should be next on "<"
-// returns tag code (on error, Element::TagType::kBegin = 0)
 
 
 XmlParser::ItemType XmlParser::loadTag() noexcept 
@@ -139,7 +132,7 @@ XmlParser::ItemType XmlParser::loadTag() noexcept
    else if(c) // start-tag
    {
        // append until '>' but check if it appended already; "<>" is odd but anyway...
-       // still, TODO: better checks for allowed first character
+       // still, TODO: better checks for first character maybe
         if(c != '>' && append_seek_if(_text, (is_eq<'>'>), true))  
         {
             if(_text[_text.size() - 2] != '/') return ItemType::kPrefix;
@@ -340,7 +333,7 @@ XmlParser::~XmlParser()
     delete[] _buffer;
 }
 
-//=====================     Tag parts    ==================================//
+//=====================    Tag components    ==================================//
 
 std::string_view XmlParser::getNameFromTag(std::string_view s) noexcept
 {

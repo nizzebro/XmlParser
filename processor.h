@@ -4,7 +4,6 @@
 #include <algorithm>
 #include <vector>
 
-
 class XmlParser: private char_parsers::chunk_charser<char,XmlParser> {
 
     friend class char_parsers::chunk_charser<char, XmlParser>; 
@@ -29,7 +28,6 @@ class XmlParser: private char_parsers::chunk_charser<char,XmlParser> {
 
     /// Destructor. Closes any opened file and frees the buffer.
     ~XmlParser();
-
 
     /// Processing options, bits are combined.
     struct Options
@@ -77,7 +75,6 @@ class XmlParser: private char_parsers::chunk_charser<char,XmlParser> {
         std::string_view name; 
         std::string_view value;
     };
-
 
     struct Path 
     {
@@ -148,13 +145,16 @@ class XmlParser: private char_parsers::chunk_charser<char,XmlParser> {
 
     const ItemType& getItemType() const noexcept { return _itemType; }
 
-    /// Checks if the item is either a start-tag or a self-closing tag.
+    /// Checks if the item is either start-tag or self-closing tag.
     bool isElement() const noexcept 
     {return ((int)_itemType & ((int)ItemType::kPrefix | 
         (int)ItemType::kSelfClosing));}
-    /// Checks if the item is element of specific name.
 
-    /// Checks if the item is a self-closing tag.
+    /// Checks if the item is element of specific name.
+    bool isElement(const char* name) const noexcept 
+    { return isElement() && getName() == name;}
+
+    /// Checks if the item is self-closing tag.
     bool isSelfClosing() const noexcept 
     {return (_itemType == ItemType::kSelfClosing);}
   
@@ -162,7 +162,7 @@ class XmlParser: private char_parsers::chunk_charser<char,XmlParser> {
     bool isPrefix() const noexcept 
     {return (_itemType == ItemType::kPrefix);}
 
-    /// Checks if the item is an end-tag.
+    /// Checks if the item is end-tag.
     bool isSuffix() const noexcept 
     {return (_itemType == ItemType::kSuffix);}
 
@@ -171,12 +171,16 @@ class XmlParser: private char_parsers::chunk_charser<char,XmlParser> {
     {return ((int)_itemType & ((int)ItemType::kSuffix |
         (int)ItemType::kSelfClosing));}
 
-    /// Checks if the item is a text block, including CDATA blocks.
+    /// Checks if the item is text block, including CDATA blocks.
     bool isText() const noexcept 
     {return ((int)_itemType & ((int)ItemType::kEscapedText | 
         (int)ItemType::kCData));}
 
-    /// Checks if the item is a CDATA block.
+    /// Checks if the item is text block of specific name.
+    bool isText(const char* name) const noexcept 
+    { return isText() && getName() == name;}
+
+    /// Checks if the item is CDATA block.
     bool isCDATA() const noexcept 
     {return (_itemType == ItemType::kCData);}
     
@@ -201,14 +205,12 @@ class XmlParser: private char_parsers::chunk_charser<char,XmlParser> {
     bool isEnd() const noexcept 
     {return (_itemType == ItemType::kEnd); }
     
-
     /// Text of the current item.
     /// \detail For a text block, gets the text; for any kind of tag
     /// gets the tag's text including angle brackets.
     /// For ItemType::kEnd, the text is either empty or contains 
     /// an incomplete tag which produced error.
     const std::string& getText() const noexcept { return _text; }
-
 
     ///}@
 
@@ -219,7 +221,7 @@ class XmlParser: private char_parsers::chunk_charser<char,XmlParser> {
     std::string_view getStartTag() const noexcept;
 
     /// Current element's name; valid while current item
-    ///   is this element's start-tag, text, comment, PI or end-tag
+    /// is this element's start-tag, text, comment, PI or end-tag
     std::string_view getName() const noexcept;
 
     ///  True if current element has attributes; valid while current
@@ -262,9 +264,7 @@ class XmlParser: private char_parsers::chunk_charser<char,XmlParser> {
     /// Returns current path depth; same as getPath().size()
     std::size_t getLevel() const noexcept { return getPath().size();}
 
-
     ///}@
-
 
     ///@{
     /** Traversing entities */
@@ -288,12 +288,9 @@ class XmlParser: private char_parsers::chunk_charser<char,XmlParser> {
     bool next(std::size_t lvl) noexcept 
     { return !(isElementEnd() && getLevel() == lvl) ? next() : false;}
 
-
     ///}@
 
-
     ///@{ Write
-
 
     /// Interface intended to copy data e.g. to write it to a file
     struct IWriter
@@ -326,11 +323,7 @@ class XmlParser: private char_parsers::chunk_charser<char,XmlParser> {
     /// stops at the end-tag of this element.
     void writeElement(IWriter& writer, std::size_t userIndex);
 
-
-
     ///}@
-
-
 
     private:
     
@@ -359,5 +352,3 @@ class XmlParser: private char_parsers::chunk_charser<char,XmlParser> {
     static std::vector<Attribute> getAttributesFromTag(std::string_view) 
         noexcept;
 };
-
-
