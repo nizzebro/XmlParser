@@ -81,8 +81,6 @@ class XmlParser: private char_parsers::chunk_charser<char,XmlParser> {
         struct reference: std::string_view
         {
             using std::string_view::string_view;
-            /// gets start-tag's text;
-            std::string_view getStartTag() const noexcept;
             /// gets start-tag's name
             std::string_view getName() const noexcept;
             ///  Returns true if start-tag has attributes
@@ -143,7 +141,7 @@ class XmlParser: private char_parsers::chunk_charser<char,XmlParser> {
     ///@{
     /** Type and text of current item */
 
-    const ItemType& getItemType() const noexcept { return _itemType; }
+    const ItemType& itemType =  _itemType; 
 
     /// Checks if the item is either start-tag or self-closing tag.
     bool isElement() const noexcept 
@@ -151,8 +149,8 @@ class XmlParser: private char_parsers::chunk_charser<char,XmlParser> {
         (int)ItemType::kSelfClosing));}
 
     /// Checks if the item is element of specific name.
-    bool isElement(const char* name) const noexcept 
-    { return isElement() && getName() == name;}
+    bool isElement(const char* elementName) const noexcept 
+    { return isElement() && getName() == elementName;}
 
     /// Checks if the item is self-closing tag.
     bool isSelfClosing() const noexcept 
@@ -177,8 +175,8 @@ class XmlParser: private char_parsers::chunk_charser<char,XmlParser> {
         (int)ItemType::kCData));}
 
     /// Checks if the item is text block of specific name.
-    bool isText(const char* name) const noexcept 
-    { return isText() && getName() == name;}
+    bool isText(const char* elementName) const noexcept 
+    { return isText() && getName() == elementName;}
 
     /// Checks if the item is CDATA block.
     bool isCDATA() const noexcept 
@@ -210,7 +208,7 @@ class XmlParser: private char_parsers::chunk_charser<char,XmlParser> {
     /// gets the tag's text including angle brackets.
     /// For ItemType::kEnd, the text is either empty or contains 
     /// an incomplete tag which produced error.
-    const std::string& getText() const noexcept { return _text; }
+    const std::string& text = _text; 
 
     ///}@
 
@@ -218,19 +216,23 @@ class XmlParser: private char_parsers::chunk_charser<char,XmlParser> {
     /** Properties of current element */
 
     /// Current element's start tag
-    std::string_view getStartTag() const noexcept;
+    Path::reference getStartTag() const noexcept
+    {return path[getLevel()];}
 
     /// Current element's name; valid while current item
     /// is this element's start-tag, text, comment, PI or end-tag
-    std::string_view getName() const noexcept;
+    std::string_view getName() const noexcept
+    { return getStartTag().getName();}
 
     ///  True if current element has attributes; valid while current
     ///  item is this element's start-tag, text, comment, PI or end-tag
-    bool hasAttributes() const noexcept;
+    bool hasAttributes() const noexcept
+    { return getStartTag().hasAttributes();}
 
     ///  Current element's attributes; valid while current item
     ///   is this element's start-tag, text, comment, PI or end-tag
-    std::vector<Attribute> getAttributes() const noexcept;
+    std::vector<Attribute> getAttributes() const noexcept
+    { return getStartTag().getAttributes();}
 
     ///}@
 
@@ -259,10 +261,10 @@ class XmlParser: private char_parsers::chunk_charser<char,XmlParser> {
     ///                         // level = 0 - EOF
 
     /// Returns  current path as the stack of start-tags 
-    const Path& getPath() const noexcept { return _path; }
+    const Path& path = _path;
 
     /// Returns current path depth; same as getPath().size()
-    std::size_t getLevel() const noexcept { return getPath().size();}
+    std::size_t getLevel() const noexcept { return path.size();}
 
     ///}@
 
@@ -349,8 +351,5 @@ class XmlParser: private char_parsers::chunk_charser<char,XmlParser> {
     bool appendRestOfCDATA() noexcept;
     ItemType loadTag() noexcept;
     ItemType loadText() noexcept;
-    static std::string_view getNameFromTag(std::string_view) noexcept;
-    static bool hasTagAttributes(std::string_view s) noexcept;
-    static std::vector<Attribute> getAttributesFromTag(std::string_view) 
-        noexcept;
+
 };

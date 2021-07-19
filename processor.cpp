@@ -333,11 +333,12 @@ XmlParser::~XmlParser()
     delete[] _buffer;
 }
 
-//=====================    Tag components    ==================================//
+//=====================    Path  and tag components  ===========================//
 
-std::string_view XmlParser::getNameFromTag(std::string_view s) noexcept
+
+std::string_view XmlParser::Path::reference::getName() const noexcept
 {
-    charser it(s);
+    charser it(*this);
     if(it.getc() == '<')
     {
         auto p = it.get();  
@@ -347,16 +348,16 @@ std::string_view XmlParser::getNameFromTag(std::string_view s) noexcept
     return std::string_view();
 }
 
-bool XmlParser::hasTagAttributes(std::string_view s) noexcept
+bool XmlParser::Path::reference::hasAttributes() const noexcept
 {
-    charser it(s);
+    charser it(*this);
     return it.seek_if(is_lt_eq<' '>) && it.seek_if(is_gt<' '>)
         && it.seek('=') && it.seek('"') && it.skip() && it.seek('"');
 }
 
-std::vector<XmlParser::Attribute> XmlParser::getAttributesFromTag(std::string_view s) noexcept
+std::vector<XmlParser::Attribute> XmlParser::Path::reference::getAttributes() const noexcept
 {
-    charser it(s);
+    charser it(*this);
     std::vector<Attribute> v;
     while(it.seek_if(is_lt_eq<' '>)) // "<tagname[blank]"
     {
@@ -373,26 +374,6 @@ std::vector<XmlParser::Attribute> XmlParser::getAttributesFromTag(std::string_vi
         v.push_back(Attribute{name, value});
     }
     return std::move(v);
-}
-
-std::string_view XmlParser::Path::reference::getStartTag() const noexcept
-{
-    return *this;
-}
-
-std::string_view XmlParser::Path::reference::getName() const noexcept
-{
-    return getNameFromTag(*this);
-}
-
-bool XmlParser::Path::reference::hasAttributes() const noexcept
-{
-    return hasTagAttributes(*this);
-}
-
-std::vector<XmlParser::Attribute> XmlParser::Path::reference::getAttributes() const noexcept
-{
-    return getAttributesFromTag(*this);
 }
 
 XmlParser::Path::reference XmlParser::Path::operator[](std::size_t n) const noexcept
@@ -413,26 +394,6 @@ void XmlParser::Path::popItem() noexcept
 {
     _offsets.pop_back(); 
     _tags.erase(_offsets.back());
-}
-
-std::string_view XmlParser::getStartTag() const noexcept
-{
-    return getPath()[getLevel()].getStartTag();
-}
-
-std::string_view XmlParser::getName() const noexcept
-{
-    return getPath()[getLevel()].getName();
-}
-
-bool XmlParser::hasAttributes() const noexcept
-{
-    return getPath()[getLevel()].hasAttributes();
-}
-
-std::vector<XmlParser::Attribute> XmlParser::getAttributes() const noexcept
-{
-    return getPath()[getLevel()].getAttributes();
 }
 
 
