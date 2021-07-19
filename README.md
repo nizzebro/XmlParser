@@ -4,7 +4,7 @@ Works as a stream with buffer which reads fixed-sized chunks. Entities are proce
 Currently supports utf-8 only.
 
     XmlParser p;
-    p.openFile("D:\sample.xml");
+    p.openFile("D:\\sample.xml");
     while(p.next())
     {
         if(p.isElement("fruits"))
