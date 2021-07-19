@@ -12,8 +12,6 @@ using UChar = uint_least32_t;
 
 /// Common character-checking unary predicates.
 
-
-
 template <UChar c>
 auto constexpr is_eq =  [](UChar ch){return c == ch;};
 template <UChar c>
@@ -41,7 +39,7 @@ using predicate =   std::function<bool(UChar)>;
 
 /// Base class for safe text iterators.
 ///\param T Character type
-/// \details  Encapsulates two poiters - one to the current position and one to the end of the sequence.
+/// \details  Encapsulates two poiters - to the current position and to the end of the sequence.
 /// Contains only common logic; encoding-dependent functions are parts of derived implementations.  
 template<typename T>
 class charser_base
@@ -53,8 +51,6 @@ class charser_base
     const T* _end;
 
     // actual start and end in memory; for e.g. reversed iterator implementation
-    const T* _head() const noexcept {return _ptr;}
-    const T* _tail() const noexcept {return _end;}
 
     public:
 
@@ -90,17 +86,17 @@ class charser_base
     /// Moves data to a buffer which should be at least of size().
     char_type* move(char_type* dst) const noexcept  // spec 
     {
-        return std::char_traits<char_type>::move(dst, base_type::head(), size());
+        return std::char_traits<char_type>::move(dst, get(), size());
     }
     /// Copies data to a buffer which should be at least of size().
     char_type* copy(char_type* dst) const  noexcept  // spec 
     {  
-        return std::char_traits<char_type>::copy(dst, base_type::head(), size()); 
+        return std::char_traits<char_type>::copy(dst, base_type::get(), size()); 
     }
     /// Copies data to a buffer which should be at least of size() + 1, appending 0.
     char_type* c_str(char_type* dst) const noexcept  // spec 
     {   
-        const char_type* src = _head(); char_type c;
+        const char_type* src = get(); char_type c;
         for( ptrdiff_t i = size(); ; ) 
         {c = *src++; if(--i <= 0) break; *dst++ = c;} 
         *dst = 0;  return dst;

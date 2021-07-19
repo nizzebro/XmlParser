@@ -84,19 +84,19 @@ XmlParser::EntityType XmlParser::loadTag() noexcept
 
         auto n = append_skip_while(_text, "--");
 
-        if(n == sizeof("--"))  
+        if(n == 2)  
         {
             if (appendRestOfComment()) return EntityType::kComment;
             return EntityType::kEnd;
         }
 
-        else if(level() && append_skip_while(_text, "[CDATA[") == sizeof("[CDATA["))    
+        else if(level() && append_skip_while(_text, "[CDATA[") == 7)    
         {  
             if(_options & Options::kKeepCDATAtags) _text.clear();
 
             if (appendRestOfCDATA())
             {
-                if(_options & Options::kKeepCDATAtags) _text.erase(_text.size() - sizeof("]>")); 
+                if(_options & Options::kKeepCDATAtags) _text.erase(_text.size() - 3); 
                 return  EntityType::kCData; 
             }
             return EntityType::kEnd;
@@ -114,7 +114,7 @@ XmlParser::EntityType XmlParser::loadTag() noexcept
 
                 if (c == '!') // "<!-" comment?
                 {
-                    if(append_skip_while(_text, "--") == sizeof("--")) 
+                    if(append_skip_while(_text, "--") == 2) 
                     {
                         if (!appendRestOfComment()) break;
                     } 
@@ -468,7 +468,7 @@ std::vector<XmlParser::Attribute> XmlParser::getAttributes(std::size_t lvl) cons
 
 //=====================     Write    ==================================//
 
-bool XmlParser::writeEntity(IWriter & writer, std::size_t userIndex)
+bool XmlParser::writeEntity(IWriter & writer, std::size_t userIndex) 
 {
     writer.write(_text.data(), _text.size(), userIndex);
     return next();
@@ -482,24 +482,23 @@ void XmlParser::writeElement(IWriter & writer, std::size_t userIndex)
     } 
 }
 
-bool XmlParser::FileWriter::openFiles(const char* path, 
+bool XmlParser::FileWriter::openFiles(std::string dir, 
     std::initializer_list<const char*>filenames) noexcept
 {
-    std::string s = path;
-    auto pos = s.size();
+    if(dir.back() != '\\') dir += ('\\');
+    auto pos = dir.size();
     for(auto & fname : filenames)
     {
-        s += ('\\');
-        s.append(fname);
-        s += ('\0');
-        auto f = fopen(s.data(), "wb");
+        dir.append(fname);
+        dir += ('\0');
+        auto f = fopen(dir.data(), "wb");
         if(!f) 
         {
             closeFiles();
             return false;
         }
         outputs.push_back(f);
-        s.erase(pos);
+        dir.erase(pos);
     }
     return true;
 }
@@ -510,7 +509,7 @@ void XmlParser::FileWriter::write(const char * data, std::size_t n,
   _fwrite_nolock(data, 1, n, outputs[userIndex]);
 }
 
-void XmlParser::FileWriter::closeFiles()
+void XmlParser::FileWriter::closeFiles() noexcept
 {
     for(auto & f : outputs) { fclose(f);}
     outputs.clear();

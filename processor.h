@@ -275,38 +275,37 @@ class XmlParser: private char_parsers::chunk_charser<char,XmlParser> {
     ///@{ Write
 
 
-    /// Interface intended to copy the data e.g. to write to a file
+    /// Interface intended to copy data e.g. to write it to a file
     struct IWriter
     {
         /// Callback for data writing functions 
-        /// \param data Poiter to the block to write
+        /// \param data Poiter to the data to write
         /// \param n Size of data, bytes
-        /// \param userIndex Can be used e.g. to choose a particular file or data container. 
-        /// \return True if operation was succesful, false if error occured.
+        /// \param userIndex Can be used e.g.to choose a particular file or data container. 
         virtual void write(const char* data, std::size_t n, std::size_t userIndex) = 0;
+    };
+
+    /// A simple IWriter implementation to write to files
+    class FileWriter
+    {
+        public:
+        bool openFiles(std::string dir, std::initializer_list<const char*>filenames) noexcept;
+        void closeFiles() noexcept;
+        ~FileWriter();
+
+        virtual void write(const char* data, std::size_t n, std::size_t iFile) noexcept;
+        private:
+            std::vector<FILE*> outputs; 
     };
 
     /// Passes current entity's text to IWriter and performs next().
     bool writeEntity(IWriter& writer, std::size_t userIndex);
   
 
-    /// Passes current element's text, including all tags, to IWriter and
-    /// stops at its end tag.
+    /// Passes the current element's content, including all tags, to IWriter and
+    /// stops at the end-tag of this element.
     void writeElement(IWriter& writer, std::size_t userIndex);
 
-
-    /// A simple ready-to-use IWriter implementation to write to files
-    class FileWriter
-    {
-        public:
-        bool openFiles(const char* path, std::initializer_list<const char*>filenames) noexcept;
-        void closeFiles();
-        ~FileWriter();
-
-        virtual void write(const char* data, std::size_t n, std::size_t iFile) noexcept;
-        private:
-        std::vector<FILE*> outputs; 
-    };
 
 
     ///}@
@@ -315,7 +314,6 @@ class XmlParser: private char_parsers::chunk_charser<char,XmlParser> {
 
     private:
     
-
     //static const int max_tag_length = 0x100000;  // unused yet
    
     char* _buffer;
