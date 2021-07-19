@@ -21,7 +21,7 @@ Currently supports utf-8 only.
                     std::cout << "The text of <apples> : " << '\n' << p.text << '\n'; 
                     for(auto & elem : p.path)
                     {
-                        std::cout << elem.getName(i) << '\\'; // path
+                        std::cout << elem.getName() << '\\'; // path
                     }
                     std::cout << '\n';
                 }
