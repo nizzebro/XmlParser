@@ -5,21 +5,30 @@ A simple C++ class for fast stream parsing XML files with a minimum overhead.
     parser.openFile("D:\sample.xml");
     while(next())
     {
-        if(isElement() && getName() == "category")
+        if(isElement("fruits"))
         {
-            for(auto & a : getAttributes())
+            for(auto & a : attributes())
             { 
                 std::cout << a.name << '=' << a.value << '\n';
             }
             auto i = getLevel();
-            while(next(i)) // iterates until the end-tag of current nesting level
+            while(next(i)) // until </fruits> (self-closing <fruits/> returns false immediately)
             {
-                if(isText() && getName() == "item") // getName() is the element's name
+                if(isText("apple")) // text of <apple>?
                 {
-                    std::cout << "The text of <item> : " << '\n' << getText() << '\n';
+                    std::cout << "The text of <apple> : " << '\n' << getText() << '\n';
+                    for(int i = 0; i <= getLevel(); ++i)
+                    {
+                        std::cout << getName(i) << '\\'; // path
+                    }
+                    std::cout << '\n';
                 }
             }
-            std::cout << "</category> end-tag is reached" << '\n';
+            std::cout << "the end-tag </fruits> reached" << '\n';
+        }
+        else if(isPI() || isDTD() || isComment())
+        {
+            std::cout << getText(); // the tag's text
         }
      }
     parser.closeFile(); 
