@@ -535,26 +535,11 @@ class basic_charser: public Impl {
 
     /// Construct with a stl string view data.
 
-    constexpr basic_charser(const stl_string_view& s) noexcept: 
+    constexpr basic_charser(stl_string_view s) noexcept: 
          basic_charser(s.data(), s.size()){}
 
     /// Assign a stl string view data.
-    constexpr basic_charser& operator=(const stl_string_view& s) noexcept
-    {  
-        assign(s.data(), s.size()); 
-        return *this;
-    }
-
-    /// Construct with stl string data.
-    template<typename A> 
-    constexpr basic_charser(const stl_string<A>& s) noexcept: 
-         basic_charser(s.data(), s.size())
-    {
-    }
-
-    /// Assign a stl string data.
-    template<typename A> 
-    constexpr basic_charser& operator=(const stl_string<A>& s) noexcept  
+    constexpr basic_charser& operator=(stl_string_view s) noexcept
     {  
         assign(s.data(), s.size()); 
         return *this;
@@ -715,17 +700,7 @@ class basic_charser: public Impl {
        return base_type::seek(cstr, n); 
     }
 
-    constexpr bool seek(const char_type* s) noexcept
-    {
-        return seekstr(s, std::char_traits<char_type>::length(s)); // need to know str len in advance
-    }
-
-    constexpr bool seek(const stl_string_view& s) noexcept  
-    {
-        return seekstr(s.data(), s.size());
-    }
-    template<typename A>
-    constexpr bool seek(const stl_string<A>& s) noexcept  
+    constexpr bool seek(stl_string_view s) noexcept  
     {
         return seekstr(s.data(), s.size());
     }
@@ -742,17 +717,8 @@ class basic_charser: public Impl {
     {
         return base_type::skip_while(s,n);
     } 
-    constexpr std::size_t skip_while(const char_type* s) noexcept  
-    {
-        return skip_while(s, std::char_traits<char_type>::length(s));
-    } 
-    constexpr std::size_t skip_while(const stl_string_view& s) noexcept  
-    {
-        return skip_while(s.data(), s.size());
-    }
-
-    template<typename A>
-    constexpr std::size_t skip_while(const stl_string<A>& s) noexcept  
+ 
+    constexpr std::size_t skip_while(stl_string_view s) noexcept  
     {
         return skip_while(s.data(), s.size());
     }
@@ -804,11 +770,6 @@ class basic_charser: public Impl {
     }
 
 
-     /** Appends data to a stl string until the specified terminating character.
-    /// \param dst String to append data to.
-    /// \param term Terminating character.
-    /// \return True if terminator was found, false if the end of data was reached.
-    */
 
      ///@{
     /** Appends characters to stl string until the given terminator or the end of data. 
@@ -849,18 +810,7 @@ class basic_charser: public Impl {
     
 
     template <typename A>
-    constexpr std::size_t  append_skip_while(stl_string<A>& dst, const char_type* s) noexcept  
-    { return append_skip_while(dst, s, std::char_traits<char_type>::length(s)); } 
-
-
-    template <typename A>
-    constexpr std::size_t  append_skip_while(stl_string<A>& dst, const stl_string_view& s) noexcept 
-    {
-        return append_skip_while(dst, s.data(), s.size());
-    }
-
-    template <typename A1, typename A2>
-    constexpr std::size_t  append_skip_while(stl_string<A1>& dst, std::basic_string<A2>& s) noexcept 
+    constexpr std::size_t  append_skip_while(stl_string<A>& dst, stl_string_view s) noexcept 
     {
         return append_skip_while(dst, s.data(), s.size());
     }
@@ -1045,7 +995,7 @@ class chunk_charser : public charser_impl_fixed<char>
     {
         return skip_while(s, std::char_traits<char_type>::length(s));
     } 
-    constexpr std::size_t skip_while(const stl_string_view& s) noexcept  
+    constexpr std::size_t skip_while(const stl_string_view s) noexcept  
     {
         return skip_while(s.data(), s.size());
     }
@@ -1147,7 +1097,6 @@ class chunk_charser : public charser_impl_fixed<char>
 
     ///@{
 
-
     /** Appends a number of characters to stl string */
     template <typename A>
     constexpr std::size_t append_skip(stl_string<A>& dst, std::size_t n = 1) noexcept  
@@ -1174,23 +1123,15 @@ class chunk_charser : public charser_impl_fixed<char>
     }
     
 
-    template <typename A>
-    constexpr std::size_t  append_skip_while(stl_string<A>& dst, const char_type* s) noexcept  
-    { return append_skip_while(dst, s, std::char_traits<char_type>::length(s)); } 
+    //template <typename A>
+    //constexpr std::size_t  append_skip_while(stl_string<A>& dst, const char_type* s) noexcept  
+    //{ return append_skip_while(dst, s, std::char_traits<char_type>::length(s)); } 
 
-
     template <typename A>
-    constexpr std::size_t  append_skip_while(stl_string<A>& dst, const stl_string_view& s) noexcept 
+    constexpr std::size_t  append_skip_while(stl_string<A>& dst, const stl_string_view s) noexcept 
     {
         return append_skip_while(dst, s.data(), s.size());
     }
-
-    template <typename A1, typename A2>
-    constexpr std::size_t  append_skip_while(stl_string<A1>& dst, std::basic_string<A2>& s) noexcept 
-    {
-        return append_skip_while(dst, s.data(), s.size());
-    }
-
 
 };
 
