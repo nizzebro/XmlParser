@@ -16,7 +16,7 @@ Currently supports utf-8 only.
             auto i = getLevel();
             while(next(i)) // until </fruits>; as for <fruits/>, will return false immediately
             {
-                if(isText("apples")) // a text block of an <apple> element ? 
+                if(isText("apples")) // a text block of an <apples> element ? 
                 {
                     std::cout << "The text of <apples> : " << '\n' << getText() << '\n';
                     for(auto & elem : getPath())
