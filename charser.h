@@ -172,7 +172,7 @@ class charser_impl_fixed: public charser_base<T>
         auto n = size();
         if (n) 
         { 
-            while (!q(*_ptr) && (--n)) { ++_ptr; if ((--n) == 0) break; }
+            while (!q(*_ptr)) { ++_ptr; if ((--n) == 0) break; }
         }
         return  n? *_ptr : 0;
     }

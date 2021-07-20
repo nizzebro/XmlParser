@@ -6,8 +6,6 @@ using namespace std;
 using namespace char_parsers;
 
 
-
-
 bool XmlParser::loadNextChunk() noexcept
 {
     // no file checks here; rely on ItemType::kEnd which prevents next()
@@ -175,13 +173,13 @@ void XmlParser::unescapeText() noexcept
         auto c = it.seek('&');
         _tmp.append(p, it.get());
         if(!c) break;
-        unchecked_skip();
+        it.unchecked_skip();
         p = it.get(); 
         c = it.seek(';');
         if(!c)
         {
             _tmp += '&';
-            _tmp.append(p, get() - p);
+            _tmp.append(p, it.get() - p);
             break;
         }
         else
@@ -195,11 +193,11 @@ void XmlParser::unescapeText() noexcept
                 *const_cast<char*>(it.get()) =  '\0';
                 auto val = strtoul(p, 0, radix);
                 append_utf8(val, _tmp);
-                unchecked_skip();
+                it.unchecked_skip();
                 continue;
             }
             std::string_view s (p, it.get() - p);
-            unchecked_skip(); // ';'
+            it.unchecked_skip(); // ';'
             char c = 0;
             if (s == "quot") c = 0x22;
             else if (s == "amp") c = 0x26;
@@ -209,7 +207,7 @@ void XmlParser::unescapeText() noexcept
             else 
             {
                 _tmp += '&';
-                _tmp.append(p, get() - p);
+                _tmp.append(p,it.get() - p);
                 continue;
             }
             _tmp += c;
@@ -355,7 +353,9 @@ std::string_view XmlParser::Path::reference::getName() const noexcept
     if(it.getc() == '<')
     {
         auto p = it.get();  
-        it.seek_if([](UChar c) {return is_lt_eq<' '>(c) || is_eq<'>'>(c) || is_eq<'/'>(c); });
+        it.seek_if([](UChar c) {
+            return is_lt_eq<' '>(c) || is_eq<'>'>(c) || is_eq<'/'>(c); 
+            });
         return std::string_view(p, it.get() - p);
     }
     return std::string_view();
