@@ -169,32 +169,22 @@ class charser_impl_fixed: public charser_base<T>
    
     constexpr UChar seek_if(predicate q) noexcept
     { 
-        auto p = _ptr; auto n = size();
-        if(n) 
-        {
-            while (!q(*p)) 
-            {
-                 ++p;
-                if (--n == 0) break; 
-            }
-            _ptr = p;
+        auto n = size();
+        if (n) 
+        { 
+            while (!q(*_ptr) && (--n)) { ++_ptr; if ((--n) == 0) break; }
         }
-        return  n? *p : 0;
+        return  n? *_ptr : 0;
     }
 
     constexpr UChar seek(UChar c) noexcept
     { 
-        auto p = _ptr; auto n = size();
+        auto n = size();
         if(n) 
-        {
-            while (c != *p) 
-            {
-                 ++p;
-                if (--n == 0) break; 
-            }
-            _ptr = p;
+        { 
+            while (c != *_ptr) { ++_ptr; if ((--n) == 0) break; }
         }
-        return  n? *p : 0;
+        return  n? *_ptr : 0;
     }
 
 
@@ -203,20 +193,18 @@ class charser_impl_fixed: public charser_base<T>
         auto n = size();
         if(n) 
         {
-            auto p = _ptr; 
             for(auto s = cstr; ;)
             {
                 if (*s != 0) 
                 { 
-                    if (*s == *p) break;
+                    if (*s == *_ptr) break;
                     ++s; 
                     continue; 
                 }
-                ++p;
+                ++_ptr;
                 if(--n == 0) break;
                 s = cstr;
             } 
-            _ptr = p;
         }
         return  n? *_ptr : 0; 
     }
@@ -239,96 +227,19 @@ class charser_impl_fixed: public charser_base<T>
     } 
 
 
-    constexpr bool seek(const char_type* cstr, std::size_t n) noexcept 
+    constexpr bool seek(const char_type* cstr, std::size_t n, bool bSkip) noexcept 
     { 
-        auto nc; auto b;
-        for(;;)
+        while(!empty())
         {   
-            nc = skip_while(cstr, n);
-            auto b = nc == n;
-            if (b ||  empty()) break;
+            auto nc = skip_while(cstr, n);
             _ptr -= (nc - 1);
+            if (nc != n) continue;
+            if (bSkip) _ptr += (nc - 1);
+            return true;
         }
-        _ptr -= nc;
-        return b;
+        return false;
     }
 
-    template<typename A>
-    constexpr UChar unchecked_appendc(stl_string<A>& dst) noexcept  
-    { 
-        auto c = unchecked_getc();
-        dst += c;
-        return c;
-    }
-
-
-    template<typename A>
-    constexpr UChar appendc(stl_string<A>& dst) noexcept  
-    { 
-        auto c = getc();
-        dst += (c? c : 0);
-        return c;
-    }
-
-
-    template <typename A>
-    constexpr std::size_t append_skip(stl_string<A>& dst, std::size_t n = 1) noexcept  
-    { 
-        n = std::min(n,  size());
-        dst.append(_ptr, n);
-        return n;
-    }
-
-    template<typename A>
-    constexpr UChar append_seek_if(stl_string<A>& dst, predicate q, bool bAppFound = false) noexcept  
-    {
-        auto p = _ptr;
-        auto c = seek_if(q);
-        dst.append(p, _ptr - p);
-        if (bAppFound && c) 
-        {
-            dst += c;
-            ++_ptr;
-        }
-        return c;
-    }
-
-    template<typename A>
-    constexpr UChar append_seek(stl_string<A>& dst, UChar ch, bool bAppFound = false) noexcept  
-    {
-        auto p = _ptr;
-        auto c = seek(ch);
-        dst.append(p, _ptr - p);
-        if (bAppFound && c) 
-        {
-            dst += c;
-            ++_ptr;
-        }
-        return c;
-    }
-
-    template<typename A>
-    constexpr UChar append_seek_of(stl_string<A>& dst, const char_type* cstr, bool bAppFound = false) noexcept  
-    {
-        auto p = _ptr;
-        auto c = seek_of(cstr);
-        dst.append(p, _ptr - p);
-        if (bAppFound && c) 
-        {
-            dst += c;
-            ++_ptr;
-        }
-        return c;
-    }
-
-    template <typename A>
-    constexpr std::size_t append_skip_while(stl_string<A>& dst, const char_type* s, std::size_t n) noexcept  
-    {
-        auto p = _ptr;
-        n = skip_while(s, n);
-        dst.append(p, n);
-        return n;
-    }
 };
 
 template<typename T>
@@ -469,13 +380,6 @@ class charser_impl_utf8: public charser_base<T> {
     } 
     
 
-    template <typename A>
-    constexpr UChar appendc(stl_string<A>& dst) noexcept
-    {  
-        //TODO: impl
-        return 0; 
-    }
-
     constexpr UChar seek_if(predicate q) noexcept
     { 
         //TODO: impl
@@ -487,7 +391,7 @@ class charser_impl_utf8: public charser_base<T> {
         return  0;
     }
 
-    constexpr bool seek(const char_type* cstr, std::size_t n) noexcept 
+    constexpr bool seek(const char_type* cstr, std::size_t n, bool bSkip) noexcept 
     { 
         //TODO: impl
         return  0;
@@ -663,7 +567,11 @@ class basic_charser: public Impl {
     /// \param q Uunary predicate: takes UChar, returns boolean.
     /// \return The found character or 0 if the end of buffer was reached.
     */
-    constexpr UChar seek_if(predicate q) noexcept { return base_type::seek_if(q); }
+    constexpr UChar seek_if(predicate q) noexcept 
+    { 
+        return base_type::seek_if(q); 
+    }
+
 
     /** Advances pointer until a given character is met.
     /// \param ch A character to search for.
@@ -675,34 +583,30 @@ class basic_charser: public Impl {
         return  seek_if([&](UChar c) {return c == ch; });
     }
 
-    /** Advances pointer until any character of a given string is met.
+    /// Advances pointer until any character of a given string is met.
     /// \param cstr String that contains the characters to search for.
     /// \return The found character or 0 if the end of buffer was reached.
-    */
+ 
 
     constexpr UChar seek_of(const char_type* cstr) noexcept
     { 
         return base_type::seek_of(cstr); 
     }
 
-    /** Advances pointer until a given string is found.
+    /// Advances pointer until a given substring is found.
     /// \param cstr String to search for.
     /// \param n Length of the string.
-    /// \return True if found, false if the end of buffer was reached.
-    ///\details If the string wasn't found, the pointer is either at the end of
-        buffer, or at the last partial match, if any; e.g. if no "needle" was found
-        but the string ends with "needl" (or, "nee", or just "n"), the pointer 
-        will be set to the beginning of this substring. 
-    */
-
-    constexpr bool seek(const char_type* cstr, std::size_t n) noexcept 
+    /// \param bSkip If true, the pointer will be set to the end of the substring.
+    /// \return True if found, false otherwise.
+ 
+    constexpr bool seek(const char_type* cstr, std::size_t n, bool bSkip = false) noexcept 
     { 
-       return base_type::seek(cstr, n); 
+       return base_type::seek(cstr, n, bSkip); 
     }
 
-    constexpr bool seek(stl_string_view s) noexcept  
+    constexpr bool seek(stl_string_view s, bool bSkip = false) noexcept  
     {
-        return seekstr(s.data(), s.size());
+        return seek(s.data(), s.size(), bSkip);
     }
 
      /** Advances pointer while current data matches to a given string.
@@ -725,98 +629,6 @@ class basic_charser: public Impl {
 
     ///@}
 
-    ///@{
-     /** Search-and-copy */
-
-    /// Appends current character to a string and increments the poiter; returns 0 at the end.
-    template<typename A>
-    constexpr UChar appendc(stl_string<A>& dst) noexcept  
-    {
-        return  base_type::appendc();
-    }
-
-    /// Replaces a string with current character and increments the poiter; returns 0 at the end.
-    template<typename A>
-    constexpr UChar getc(stl_string<A>& dst) noexcept  
-    {
-        dst.clear();  return  appendc();
-    }
-
-
-    /** Appends data to a stl string while searching for a character satisfying the given condition.
-    /// \param dst String to append data to.
-    /// \param q Unary predicate that takes an UChar and returns a boolean.
-    /// \param bAppFound Whether the found character should be appened either.
-    /// \return The character found, or 0 if the end of buffer was reached.
-    */
-
-    template<typename A>
-    constexpr UChar append_seek_if(stl_string<A>& dst, predicate q, bool bAppFound = false) noexcept  
-    {
-        return base_type::append_seek_if(dst, q, bAppFound);
-    }
-
-
-    template<typename A>
-    constexpr UChar append_skip(stl_string<A>& dst, char_type c, bool bAppFound = false) noexcept  
-    {
-        return  append_seek_if(dst, [&](UChar ch) {return c == ch; }, bAppFound);
-    }
-
-    template<typename A>
-    constexpr UChar append_seek_of(stl_string<A>& dst, const char_type* cstr, bool bAppFound = false) noexcept  
-    {
-        return base_type::append_seek_of(dst, cstr, bAppFound);
-    }
-
-
-
-     ///@{
-    /** Appends characters to stl string until the given terminator or the end of data. 
-        If the terminator was found, skips it and returns true; otherwise returns false.
-    */
-
-    template <typename A>
-    constexpr bool appendline(stl_string<A>& dst, char_type term = '\n') noexcept
-    {
-        append_until(dst, term, false);
-        return skip();
-    }
-
-    template <typename A>
-    constexpr bool getline(stl_string<A>& dst, char_type c = '\n') noexcept
-    {
-        dst.clear();  return appendline(dst, c);
-    }
-
-    //@}
-
-    ///@{
-
-    /** Append a number of characters to stl string */
-    template <typename A>
-    constexpr std::size_t append_skip(stl_string<A>& dst, std::size_t n = 1) noexcept  
-    { 
-        return base_type::append_skip(dst, n);
-    }
-
-    /** Append characters to stl string while data matches to a given string, returns number of chars matched */
-
-    template <typename A>
-    constexpr std::size_t append_skip_while(stl_string<A>& dst, const char_type* s, std::size_t n) noexcept  
-    {
-        return base_type::append_skip_while(dst, s, n);
-    }
-    
-
-    template <typename A>
-    constexpr std::size_t  append_skip_while(stl_string<A>& dst, stl_string_view s) noexcept 
-    {
-        return append_skip_while(dst, s.data(), s.size());
-    }
-
-
-    ///@}
 };
 
 
@@ -981,16 +793,17 @@ class chunk_charser : public charser_impl_fixed<char>
       otherwise increments both pointers and coniniues until either the string or the buffer ends.
     */
 
-    constexpr std::size_t skip_while(const char_type* s, std::size_t n) noexcept  
+    constexpr std::size_t skip_while(const char_type* s, std::size_t len) noexcept  
     {
-        auto len = 0;
+        std::size_t nLeft = len;
         do {
-            len += base_type::skip_while(s,n);
-            if (len == n || !empty()) return len;
-            s += len;
-        } while (reload());
-        return len;
+            auto n =  base_type::skip_while(s, nLeft);
+            s += n;
+            nLeft -= n;
+        } while (nLeft || (empty() && reload()));
+        return len - nLeft;
     } 
+
     constexpr std::size_t skip_while(const char_type* s) noexcept  
     {
         return skip_while(s, std::char_traits<char_type>::length(s));
@@ -1040,21 +853,32 @@ class chunk_charser : public charser_impl_fixed<char>
         char_type c;
         do
         {
-           c = base_type::append_seek_if(dst, q, bAppFound);
+           auto p = _ptr;
+           c = base_type::seek_if(q);
+           dst.append(p, _ptr - p);
         } while (!c && reload());
+        if(bAppFound && c) 
+        {
+            dst += c; unchecked_skip();
+        }
         return c;
     }
 
-
     template<typename A>
-    constexpr UChar append_seek(stl_string<A>& dst, char_type c, bool bAppFound = false) noexcept  
+    constexpr UChar append_seek(stl_string<A>& dst, char_type ch, bool bAppFound = false) noexcept  
     {
-        char_type ch;
+        char_type c;
         do
         {
-           ch = base_type::append_seek(dst, c, bAppFound);
+           auto p = _ptr;
+           c = base_type::seek(ch);
+           dst.append(p, _ptr - p);
         } while (!c && reload());
-        return ch;
+        if(bAppFound && c) 
+        {
+            dst += c; unchecked_skip();
+        }
+        return c;
     }
 
     template<typename A>
@@ -1063,8 +887,14 @@ class chunk_charser : public charser_impl_fixed<char>
         char_type c;
         do
         {
-           c = base_type::append_seek_of(dst, cstr, bAppFound);
+           auto p = _ptr;
+           c = base_type::seek_of(cstr);
+           dst.append(p, _ptr - p);
         } while (!c && reload());
+        if(bAppFound && c) 
+        {
+            dst += c; unchecked_skip();
+        }
         return c;
     }
 
@@ -1083,7 +913,7 @@ class chunk_charser : public charser_impl_fixed<char>
     template <typename A>
     constexpr bool appendline(stl_string<A>& dst, char_type term = '\n') noexcept
     {
-        append_until(dst, term, false);
+        append_seek(dst, term, false);
         return skip();
     }
 
@@ -1097,40 +927,32 @@ class chunk_charser : public charser_impl_fixed<char>
 
     ///@{
 
-    /** Appends a number of characters to stl string */
-    template <typename A>
-    constexpr std::size_t append_skip(stl_string<A>& dst, std::size_t n = 1) noexcept  
-    { 
-        do {
-            n -= base_type::append_skip(dst, n);
-            if (!n) return n;
-        } while (reload());
-        return n;
-    }
 
     /** Appends characters to stl string while data matches to a given string, returns number of chars matched */
 
     template <typename A>
-    constexpr std::size_t append_skip_while(stl_string<A>& dst, const char_type* s, std::size_t n) noexcept  
+    constexpr std::size_t append_while(stl_string<A>& dst, const char_type* s, std::size_t len) noexcept  
     {
-        std::size_t len = 0;
+        std::size_t nLeft = len;
         do {
-            len += base_type::append_skip_while(dst, s, n);
-            if (len == n || !empty()) return len;
-            s += len;
-        } while (reload());
-        return len;
+            auto p = get();
+            auto n = skip_while(s, nLeft);
+            dst.append(p, n);
+            s += n;
+            nLeft -= n;
+        } while (nLeft || (empty() && reload()));
+        return len - nLeft;
     }
-    
+
 
     //template <typename A>
     //constexpr std::size_t  append_skip_while(stl_string<A>& dst, const char_type* s) noexcept  
     //{ return append_skip_while(dst, s, std::char_traits<char_type>::length(s)); } 
 
     template <typename A>
-    constexpr std::size_t  append_skip_while(stl_string<A>& dst, const stl_string_view s) noexcept 
+    constexpr std::size_t  append_while(stl_string<A>& dst, const stl_string_view s) noexcept 
     {
-        return append_skip_while(dst, s.data(), s.size());
+        return append_while(dst, s.data(), s.size());
     }
 
 };
