@@ -75,7 +75,7 @@ XmlParser::ItemType XmlParser::loadTag() noexcept
 
        // check if it is a comment, CData or DTD
 
-        auto n = append_skip_while(_text, "--");
+        auto n = append_while(_text, "--");
 
         if(n == 2)  
         {
@@ -83,7 +83,7 @@ XmlParser::ItemType XmlParser::loadTag() noexcept
             return ItemType::kEnd;
         }
 
-        else if(getLevel() && append_skip_while(_text, "[CDATA[") == 7)    
+        else if(getLevel() && append_while(_text, "[CDATA[") == 7)    
         {  
             if(_options & Options::kKeepCDATAtags) _text.clear();
 
@@ -107,7 +107,7 @@ XmlParser::ItemType XmlParser::loadTag() noexcept
 
                 if (c == '!') // "<!-" comment?
                 {
-                    if(append_skip_while(_text, "--") == 2) 
+                    if(append_while(_text, "--") == 2) 
                     {
                         if (!appendRestOfComment()) break;
                     } 
@@ -164,55 +164,67 @@ void append_utf8(UChar c, std::string& dst)
     }
 }
 
+void XmlParser::unescapeText() noexcept
+{
+    _tmp.clear();
+    _tmp.reserve(_text.size());
+    charser it(_text);
+    for(;;)
+    {
+        auto p = it.get();
+        auto c = it.seek('&');
+        _tmp.append(p, it.get());
+        if(!c) break;
+        unchecked_skip();
+        p = it.get(); 
+        c = it.seek(';');
+        if(!c)
+        {
+            _tmp += '&';
+            _tmp.append(p, get() - p);
+            break;
+        }
+        else
+        {
+            if (*p == '#') 
+            {
+                ++p;
+                auto b = *p == 'x';
+                int radix = b ? 16 : 10;
+                p += b ? 1 : 0;  
+                *const_cast<char*>(it.get()) =  '\0';
+                auto val = strtoul(p, 0, radix);
+                append_utf8(val, _tmp);
+                unchecked_skip();
+                continue;
+            }
+            std::string_view s (p, it.get() - p);
+            unchecked_skip(); // ';'
+            char c = 0;
+            if (s == "quot") c = 0x22;
+            else if (s == "amp") c = 0x26;
+            else if (s == "apos") c = 0x27;
+            else if (s == "lt") c = 0x3C;
+            else if (s == "gt") c = 0x3E;
+            else 
+            {
+                _tmp += '&';
+                _tmp.append(p, get() - p);
+                continue;
+            }
+            _tmp += c;
+            continue;
+        }
+    }
+    std::swap(_text, _tmp);
+}
 
 XmlParser::ItemType XmlParser::loadText() noexcept
 {
-    if (_options & Options::kKeepMnenonics) 
-    {
-        auto c = append_seek(_text, '<');
-        return c ? ItemType::kEscapedText : ItemType::kEnd;
-    }
-    while(auto c = append_seek_of(_text, "<&"))
-    {
-        if (c == '<') return ItemType::kEscapedText;
-        unchecked_appendc(_text); 
-        auto offs = _text.size(); // after "...&"
-        if (peek() == '#') 
-        {
-            unchecked_skip();
-            int radix = 10;
-            if (peek() == 'x') 
-            {
-                radix = 16; 
-                unchecked_skip();
-            }
-            c = append_seek(_text, ';');
-            if(!c) continue;
-            _text += '\0';
-            auto val = strtoul(_text.data() + offs, 0, radix);
-            _text.erase(--offs);
-            append_utf8(val, _text);
-            continue;
-        }
-        c = append_seek(_text, ';');
-        if (!c) break;
-        std::string_view s (_text.data() + offs, _text.size() - offs);
-        char cc = 0;
-        if (s == "quot") cc = 0x22;
-        else if (s == "amp") cc = 0x26;
-        else if (s == "apos") cc = 0x27;
-        else if (s == "lt") cc = 0x3C;
-        else if (s == "gt") cc = 0x3E;
-        else 
-        {
-            _text += ';';
-            continue;
-        }
-        _text.erase(--offs);
-        _text += cc;
-    }
 
-    return ItemType::kEnd;
+    auto c = append_seek(_text, '<');
+    if (c && !(_options & Options::kKeepMnenonics)) unescapeText();
+    return c ? ItemType::kEscapedText : ItemType::kEnd;
 }
 
 
@@ -289,7 +301,8 @@ XmlParser::XmlParser(std::size_t bufferSize) noexcept :
     _options(Options::kDefault),
     _itemType(ItemType::kEnd),  // the most important; prevents next()
     _path(),
-    _text()
+    _text(),
+    _tmp()
 {
     _chunkSize = bufferSize + (buffer_gran - 1) & ~(buffer_gran - 1);
     _buffer = new char[_chunkSize];
@@ -359,9 +372,8 @@ std::vector<XmlParser::Attribute> XmlParser::Path::reference::getAttributes() co
 {
     charser it(*this);
     std::vector<Attribute> v;
-    while(it.seek_if(is_lt_eq<' '>)) // "<tagname[blank]"
+    while(it.seek_if(is_lt_eq<' '>) && it.seek_if(is_gt<' '>)) // "<tagname[blank][non-blank]"
     {
-        if(!it.seek_if(is_gt<' '>)) break; // "<tagname[blank][non-blank]"
         auto pName = it.get();
         if(!it.seek('=')) break; // "<tagname[blank]attrname="
         std::string_view name(pName, it.get() - pName); // attrname

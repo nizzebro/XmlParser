@@ -344,12 +344,14 @@ class XmlParser: private char_parsers::chunk_charser<char,XmlParser> {
     Path _path;  // Stack of start-tags 
     ItemType _itemType;
     std::string _text;   
+    std::string _tmp;   
 
     bool loadNextChunk() noexcept;
     bool appendRestOfPI() noexcept;
     bool appendRestOfComment() noexcept;
     bool appendRestOfCDATA() noexcept;
     ItemType loadTag() noexcept;
+    void unescapeText() noexcept;
     ItemType loadText() noexcept;
 
 };
