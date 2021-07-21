@@ -209,34 +209,29 @@ class charser_impl_fixed: public charser_base<T>
         return  n? *_ptr : 0; 
     }
 
-    constexpr std::size_t skip_while(const char_type* s, std::size_t n) noexcept  
+    constexpr std::size_t skip_while(const char_type* s, std::size_t len) noexcept  
     {
-        n = std::min(size(), n);
-        if(n)
+        if(len = std::min(size(), len))
         {
-            auto p = _ptr; 
-            while(*s == *p)
+            auto nLeft = len; 
+            while(*s == *_ptr)
             {
-                ++p; ++s;
-                if(--n == 0) break; 
+                ++_ptr; ++s;
+                if(--nLeft == 0) break; 
             } 
-            n = p - _ptr;
-           _ptr = p;
+            len -= nLeft;
         }
-        return n;
+        return len;
     } 
 
 
-    constexpr bool seek(const char_type* cstr, std::size_t n, bool bSkip) noexcept 
+    constexpr bool seek(const char_type* cstr, std::size_t len) noexcept 
     { 
-        while(!empty())
-        {   
-            auto nc = skip_while(cstr, n);
-            _ptr -= (nc - 1);
-            if (nc != n) continue;
-            if (bSkip) _ptr += (nc - 1);
-            return true;
-        }
+        do {   
+            auto n = skip_while(cstr, len);
+            _ptr -= n;
+            if (len == n) return true;
+        } while (skip());
         return false;
     }
 
@@ -572,6 +567,11 @@ class basic_charser: public Impl {
         return base_type::seek_if(q); 
     }
 
+    constexpr stl_string_view get_seek_if(predicate q) noexcept 
+    { 
+       auto p = get();
+       return stl_string_view(p, base_type::seek_if(q)? get() - p : 0); 
+    }
 
     /** Advances pointer until a given character is met.
     /// \param ch A character to search for.
@@ -581,6 +581,12 @@ class basic_charser: public Impl {
     constexpr UChar seek(UChar ch) noexcept 
     {  
         return  seek_if([&](UChar c) {return c == ch; });
+    }
+
+    constexpr stl_string_view get_seek(UChar ch) noexcept 
+    { 
+       auto p = get();
+       return stl_string_view(p, base_type::seek(ch)? get()  - p: 0); 
     }
 
     /// Advances pointer until any character of a given string is met.
@@ -593,20 +599,38 @@ class basic_charser: public Impl {
         return base_type::seek_of(cstr); 
     }
 
+    constexpr stl_string_view get_seek_of(const char_type* cstr) noexcept 
+    { 
+       auto p = get();
+       return stl_string_view(p, base_type::seek_of(cstr)? get() - p : 0); 
+    }
+
     /// Advances pointer until a given substring is found.
     /// \param cstr String to search for.
     /// \param n Length of the string.
     /// \param bSkip If true, the pointer will be set to the end of the substring.
     /// \return True if found, false otherwise.
  
-    constexpr bool seek(const char_type* cstr, std::size_t n, bool bSkip = false) noexcept 
+    constexpr bool seek(const char_type* cstr, std::size_t len) noexcept 
     { 
-       return base_type::seek(cstr, n, bSkip); 
+       return base_type::seek(cstr, len); 
     }
 
-    constexpr bool seek(stl_string_view s, bool bSkip = false) noexcept  
+    constexpr stl_string_view get_seek(const char_type* cstr, std::size_t len) noexcept 
+    { 
+       auto p = get();
+       return stl_string_view(p, base_type::seek(cstr, len)? get() - p : 0); 
+    }
+
+
+    constexpr bool seek(stl_string_view s) noexcept  
     {
-        return seek(s.data(), s.size(), bSkip);
+        return seek(s.data(), s.size());
+    }
+
+    constexpr stl_string_view get_seek(stl_string_view s) noexcept 
+    { 
+       return get_seek(s.data(), s.size()); 
     }
 
      /** Advances pointer while current data matches to a given string.
