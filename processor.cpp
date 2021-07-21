@@ -221,7 +221,7 @@ XmlParser::ItemType XmlParser::loadText() noexcept
 {
 
     auto c = append_seek(_text, '<');
-    if (c && !(_options & Options::kKeepMnenonics)) unescapeText();
+    if (c && (_options & Options::kUnescapeText)) unescapeText();
     return c ? ItemType::kEscapedText : ItemType::kEnd;
 }
 

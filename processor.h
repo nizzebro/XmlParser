@@ -34,7 +34,7 @@ class XmlParser: private char_parsers::chunk_charser<char,XmlParser> {
     {
         enum
         {
-            kKeepMnenonics = 1,  /// Keep mnemonics (otherwise replaced with actual values) 
+            kUnescapeText = 1,   /// Replace mnemonics with actual values
             kKeepCDATAtags = 2,  /// Keep CDATA tags (otherwise removed)
             kDefault = 0
         };
@@ -288,7 +288,13 @@ class XmlParser: private char_parsers::chunk_charser<char,XmlParser> {
     /// \return False if the end-tag of an element of this level or EOF is 
     /// reached, or data error ocurred. 
     bool next(std::size_t lvl) noexcept 
-    { return !(isElementEnd() && getLevel() == lvl) ? next() : false;}
+    { 
+        return !(isElementEnd() && getLevel() == lvl) ? next() : false;
+    }
+
+    /// Replaces mnenonics in current text block with actual values.
+    /// If Options::kUnescapeText is set, it is done automatically.
+    void unescapeText() noexcept;
 
     ///}@
 
@@ -303,7 +309,10 @@ class XmlParser: private char_parsers::chunk_charser<char,XmlParser> {
         /// \param n Size of data, bytes
         /// \param userIndex Can be used e.g.to choose a particular file or data container. 
         virtual void write(const char* data, std::size_t n, std::size_t userIndex) = 0;
-        void write(const std::string_view s, std::size_t userIndex) { write(s.data(), s.size(), userIndex); }
+        void write(const std::string_view s, std::size_t userIndex)
+        { 
+            write(s.data(), s.size(), userIndex);
+        }
     };
 
     /// A simple IWriter implementation to write to files
@@ -351,7 +360,6 @@ class XmlParser: private char_parsers::chunk_charser<char,XmlParser> {
     bool appendRestOfComment() noexcept;
     bool appendRestOfCDATA() noexcept;
     ItemType loadTag() noexcept;
-    void unescapeText() noexcept;
     ItemType loadText() noexcept;
 
 };
