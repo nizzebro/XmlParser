@@ -22,7 +22,7 @@ bool XmlParser::loadNextChunk() noexcept
 
 bool XmlParser::appendRestOfComment() noexcept 
 {   
-    while (auto c = append_seek_if(_text, is_eq<'-'>, true)) 
+    while (auto c = append_seek('-', _text, true)) 
     {
         while ((c =  appendc(_text)) == '-') {}
         if (c == '>') return true; 
@@ -32,7 +32,7 @@ bool XmlParser::appendRestOfComment() noexcept
 
 bool XmlParser::appendRestOfCDATA() noexcept 
 {   
-    while (auto c = append_seek_if(_text, is_eq<']'>, true)) 
+    while (auto c = append_seek(']', _text, true)) 
     {
         while ((c =  appendc(_text)) == ']') {}
         if (c == '>') return true; 
@@ -43,7 +43,7 @@ bool XmlParser::appendRestOfCDATA() noexcept
 
 bool XmlParser::appendRestOfPI() noexcept 
 {   
-    while (auto c = append_seek_if(_text, is_eq<'?'>, true))
+    while (auto c = append_seek('?', _text, true))
     {
         if ((c =  appendc(_text)) == '>') return true;
     }
@@ -58,7 +58,7 @@ XmlParser::ItemType XmlParser::loadTag() noexcept
    auto c = appendc(_text);
    if(c == '/') // End-tag: "</" + (any chars except '>')  + '>' 
    {
-       if(append_seek_if(_text, is_eq<'>'>, true))
+       if(append_seek('>', _text, true))
            return ItemType::kSuffix;
    }
    else if(c == '?') // PI (Processor Instruction): "<?" + (any chars except "?>") + "?>" 
@@ -73,7 +73,7 @@ XmlParser::ItemType XmlParser::loadTag() noexcept
 
        // check if it is a comment, CData or DTD
 
-        auto n = append_while(_text, "--");
+        auto n = append_skip("--", _text);
 
         if(n == 2)  
         {
@@ -81,7 +81,7 @@ XmlParser::ItemType XmlParser::loadTag() noexcept
             return ItemType::kEnd;
         }
 
-        else if(getLevel() && append_while(_text, "[CDATA[") == 7)    
+        else if(getLevel() && append_skip("[CDATA[", _text) == 7)    
         {  
             if(_options & Options::kKeepCDATAtags) _text.clear();
 
@@ -97,7 +97,7 @@ XmlParser::ItemType XmlParser::loadTag() noexcept
 
         int iNested = 1;        // count matching '< >'
 
-        while (c = append_seek_of(_text, "<>", true))
+        while (c = append_seek({'<','>'}, _text, true))
         {
             if (c == '<')  // "...<"
             {   
@@ -105,7 +105,7 @@ XmlParser::ItemType XmlParser::loadTag() noexcept
 
                 if (c == '!') // "<!-" comment?
                 {
-                    if(append_while(_text, "--") == 2) 
+                    if(append_skip("--", _text) == 2) 
                     {
                         if (!appendRestOfComment()) break;
                     } 
@@ -131,7 +131,7 @@ XmlParser::ItemType XmlParser::loadTag() noexcept
    {
        // append until '>' but check if it appended already; "<>" is odd but anyway...
        // still, TODO: better checks for first character maybe
-        if(c != '>' && append_seek_if(_text, (is_eq<'>'>), true))  
+        if(c != '>' && append_seek('>', _text, true))  
         {
             if(_text[_text.size() - 2] != '/') return ItemType::kPrefix;
             return ItemType::kSelfClosing;
@@ -165,54 +165,47 @@ void append_utf8(UChar c, std::string& dst)
 void XmlParser::unescapeText() noexcept
 {
     _tmp.clear();
-    _tmp.reserve(_text.size());
     charser it(_text);
     for(;;)
     {
-        auto p = it.get();
-        auto c = it.seek('&');
-        _tmp.append(p, it.get());
-        if(!c) break;
-        it.unchecked_skip();
-        p = it.get(); 
-        c = it.seek(';');
-        if(!c)
+        if(!it.append_seek('&', _tmp, false)) break;
+        charser tok; // mnemonic to resolve
+        if(!it.get_seek(';', tok, true)) 
         {
-            _tmp += '&';
-            _tmp.append(p, it.get() - p);
+            _tmp.append(tok); // end of text but no ';'? bad... but let's leave it as is
             break;
         }
-        else
+        tok.unchecked_skip(); // skip '&' in menmonics
+        if (tok.peek() == '#') 
         {
-            if (*p == '#') 
+            tok.unchecked_skip();
+            int radix = 10;
+            if (tok.peek() == 'x')
             {
-                ++p;
-                auto b = *p == 'x';
-                int radix = b ? 16 : 10;
-                p += b ? 1 : 0;  
-                *const_cast<char*>(it.get()) =  '\0';
-                auto val = strtoul(p, 0, radix);
-                append_utf8(val, _tmp);
-                it.unchecked_skip();
-                continue;
+               radix = 16;
+               tok.unchecked_skip();
             }
-            std::string_view s (p, it.get() - p);
-            it.unchecked_skip(); // ';'
-            char c = 0;
-            if (s == "quot") c = 0x22;
-            else if (s == "amp") c = 0x26;
-            else if (s == "apos") c = 0x27;
-            else if (s == "lt") c = 0x3C;
-            else if (s == "gt") c = 0x3E;
-            else 
-            {
-                _tmp += '&';
-                _tmp.append(p,it.get() - p);
-                continue;
-            }
-            _tmp += c;
+            *const_cast<char*>(tok.end()) =  '\0'; // replace ';' with zero for strtoul
+            auto val = strtoul(tok.get(), 0, radix);
+            append_utf8(val, _tmp);
             continue;
         }
+        char c = 0;
+        if (tok == "quot") c = 0x22;
+        else if (tok == "amp") c = 0x26;
+        else if (tok == "apos") c = 0x27;
+        else if (tok == "lt") c = 0x3C;
+        else if (tok == "gt") c = 0x3E;
+        else // unknown, write it as is 
+        {
+            _tmp += '&';
+            _tmp.append(tok);
+            _tmp += ';';
+            continue;
+        }
+        _tmp += c;
+        continue;
+
     }
     std::swap(_text, _tmp);
 }
@@ -220,7 +213,7 @@ void XmlParser::unescapeText() noexcept
 XmlParser::ItemType XmlParser::loadText() noexcept
 {
 
-    auto c = append_seek(_text, '<');
+    auto c = append_seek('<', _text);
     if (c && (_options & Options::kUnescapeText)) unescapeText();
     return c ? ItemType::kEscapedText : ItemType::kEnd;
 }
@@ -239,7 +232,7 @@ bool XmlParser::next() noexcept
         if(isElementEnd())  _path.popItem(); 
 
         // skip ascii blanks
-        auto c = seek_if(is_gt<' '>); 
+        auto c = seek(gt(' ')); 
 
         if(c == '<') // tag
         {
@@ -350,39 +343,28 @@ XmlParser::~XmlParser()
 std::string_view XmlParser::Path::reference::getName() const noexcept
 {
     charser it(*this);
-    if(it.getc() == '<')
-    {
-        auto p = it.get();  
-        it.seek_if([](UChar c) {
-            return is_lt_eq<' '>(c) || is_eq<'>'>(c) || is_eq<'/'>(c); 
-            });
-        return std::string_view(p, it.get() - p);
-    }
-    return std::string_view();
+    charser name;
+    if(it.getc()) it.get_seek({' ','>','/'}, name, false);
+    return name;
 }
 
 bool XmlParser::Path::reference::hasAttributes() const noexcept
 {
     charser it(*this);
-    return it.seek_if(is_lt_eq<' '>) && it.seek_if(is_gt<' '>)
-        && it.seek('=') && it.seek('"') && it.skip() && it.seek('"');
+    return it.seek('=', true) && it.seek('"', true) && it.seek('"');
 }
 
 std::vector<XmlParser::Attribute> XmlParser::Path::reference::getAttributes() const noexcept
 {
     charser it(*this);
     std::vector<Attribute> v;
-    while(it.seek_if(is_lt_eq<' '>) && it.seek_if(is_gt<' '>)) // "<tagname[blank][non-blank]"
+    charser name;
+    charser value;
+    while(it.seek(lt_eq(' ')) && it.seek(gt(' '))) // "[blanks...][non-blank]"
     {
-        auto pName = it.get();
-        if(!it.seek('=')) break; // "<tagname[blank]attrname="
-        std::string_view name(pName, it.get() - pName); // attrname
-        it.unchecked_skip();   // skip '='
-        if(it.getc() != '"') break;
-        auto pVal = it.get();
-        if(!it.seek('"')) break;
-        std::string_view value(pVal, it.get() - pVal); 
-        it.unchecked_skip(); // skip '"'
+        if(!it.get_seek('=', name, true)) break; // return name and skip '='
+        if (it.getc() != '"') break; // skip leaing quote
+        if(!it.get_seek('"', value, true)) break; // return value and skip trailing quote
         v.push_back(Attribute{name, value});
     }
     return std::move(v);
