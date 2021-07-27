@@ -14,7 +14,7 @@ Currently supports utf-8 only.
                 std::cout << a.name << '=' << a.value << '\n';
             }
             auto i = p.getLevel();
-            while(p.next(i)) // loop until </fruits> (or <fruits/> - which returns immidiately)
+            while(p.next(i)) // loop until </fruits> (or <fruits/> - which returns immediately)
             {
                 if(p.isText("apples")) // a text block of an <apples> element ? 
                 {
