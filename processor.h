@@ -3,6 +3,7 @@
 #include "charser.h"
 #include <algorithm>
 #include <vector>
+#include <fstream>
 
 class XmlParser: private char_parsers::chunk_charser<char,XmlParser> {
 
@@ -316,16 +317,16 @@ class XmlParser: private char_parsers::chunk_charser<char,XmlParser> {
     };
 
     /// A simple IWriter implementation to write to files
-    class FileWriter: public IWriter
+    class FileWriter: public IWriter, private std::vector<std::ofstream>
     {
         public:
         bool openFiles(std::string dir, std::initializer_list<const char*>filenames) noexcept;
         void closeFiles() noexcept;
+
         ~FileWriter();
         virtual void write(const char* data, std::size_t n, std::size_t iFile) noexcept;
         using IWriter::write;
-        private:
-            std::vector<FILE*> outputs; 
+		using  std::vector<std::ofstream>::operator[];
     };
 
     /// Passes current item's text to IWriter and performs next().

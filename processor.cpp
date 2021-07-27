@@ -22,8 +22,9 @@ bool XmlParser::loadNextChunk() noexcept
 
 bool XmlParser::appendRestOfComment() noexcept 
 {   
-    while (auto c = append_seek('-', _text, true)) 
+    while (appendline(_text, '-', true, true))
     {
+		UChar c;
         while ((c =  appendc(_text)) == '-') {}
         if (c == '>') return true; 
     } 
@@ -32,8 +33,9 @@ bool XmlParser::appendRestOfComment() noexcept
 
 bool XmlParser::appendRestOfCDATA() noexcept 
 {   
-    while (auto c = append_seek(']', _text, true)) 
+    while (appendline(_text, ']',true, true))
     {
+		UChar c;
         while ((c =  appendc(_text)) == ']') {}
         if (c == '>') return true; 
     } 
@@ -43,9 +45,9 @@ bool XmlParser::appendRestOfCDATA() noexcept
 
 bool XmlParser::appendRestOfPI() noexcept 
 {   
-    while (auto c = append_seek('?', _text, true))
+    while (appendline(_text, '?', true, true))
     {
-        if ((c =  appendc(_text)) == '>') return true;
+        if (appendc(_text) == '>') return true;
     }
     return false;    
 }
@@ -53,12 +55,11 @@ bool XmlParser::appendRestOfPI() noexcept
 
 XmlParser::ItemType XmlParser::loadTag() noexcept 
 {
-   _text = '<'; 
-   unchecked_skip();
+   getc(_text); // init with '<' and skip it;
    auto c = appendc(_text);
    if(c == '/') // End-tag: "</" + (any chars except '>')  + '>' 
    {
-       if(append_seek('>', _text, true))
+       if(appendline(_text,'>', true, true))
            return ItemType::kSuffix;
    }
    else if(c == '?') // PI (Processor Instruction): "<?" + (any chars except "?>") + "?>" 
@@ -73,7 +74,7 @@ XmlParser::ItemType XmlParser::loadTag() noexcept
 
        // check if it is a comment, CData or DTD
 
-        auto n = append_skip("--", _text);
+        auto n = append_if(_text, "--");
 
         if(n == 2)  
         {
@@ -81,7 +82,7 @@ XmlParser::ItemType XmlParser::loadTag() noexcept
             return ItemType::kEnd;
         }
 
-        else if(getLevel() && append_skip("[CDATA[", _text) == 7)    
+        else if(getLevel() && append_if(_text, "[CDATA[") == 7)
         {  
             if(_options & Options::kKeepCDATAtags) _text.clear();
 
@@ -97,7 +98,7 @@ XmlParser::ItemType XmlParser::loadTag() noexcept
 
         int iNested = 1;        // count matching '< >'
 
-        while (c = append_seek({'<','>'}, _text, true))
+        while (c = appendline(_text, {'<','>'}, true, true))
         {
             if (c == '<')  // "...<"
             {   
@@ -105,7 +106,7 @@ XmlParser::ItemType XmlParser::loadTag() noexcept
 
                 if (c == '!') // "<!-" comment?
                 {
-                    if(append_skip("--", _text) == 2) 
+                    if(append_if(_text, "--") == 2)
                     {
                         if (!appendRestOfComment()) break;
                     } 
@@ -131,7 +132,7 @@ XmlParser::ItemType XmlParser::loadTag() noexcept
    {
        // append until '>' but check if it appended already; "<>" is odd but anyway...
        // still, TODO: better checks for first character maybe
-        if(c != '>' && append_seek('>', _text, true))  
+        if(c != '>' && appendline(_text, '>', true, true))
         {
             if(_text[_text.size() - 2] != '/') return ItemType::kPrefix;
             return ItemType::kSelfClosing;
@@ -168,23 +169,21 @@ void XmlParser::unescapeText() noexcept
     charser it(_text);
     for(;;)
     {
-        if(!it.append_seek('&', _tmp, false)) break;
+		// search for '&'; skip it but do not append
+        if(!it.appendline(_tmp, '&', true)) break;
         charser tok; // mnemonic to resolve
-        if(!it.get_seek(';', tok, true)) 
+		// search for ';'; skip it but do not append to the mnemonic 
+        if(!it.getspan(tok, ';', true))
         {
-            _tmp.append(tok); // end of text but no ';'? bad... but let's leave it as is
+			// end of text but no ';'? bad... but let's leave it as is
+			_tmp += '&';
+            _tmp.append(tok); 
+			_tmp += ';';
             break;
         }
-        tok.unchecked_skip(); // skip '&' in menmonics
-        if (tok.peek() == '#') 
+        if (tok.skip_if('#'))
         {
-            tok.unchecked_skip();
-            int radix = 10;
-            if (tok.peek() == 'x')
-            {
-               radix = 16;
-               tok.unchecked_skip();
-            }
+            int radix = tok.skip_if('x')? 16 :10;
             *const_cast<char*>(tok.end()) =  '\0'; // replace ';' with zero for strtoul
             auto val = strtoul(tok.get(), 0, radix);
             append_utf8(val, _tmp);
@@ -213,7 +212,7 @@ void XmlParser::unescapeText() noexcept
 XmlParser::ItemType XmlParser::loadText() noexcept
 {
 
-    auto c = append_seek('<', _text);
+    auto c = appendline(_text, '<', false);
     if (c && (_options & Options::kUnescapeText)) unescapeText();
     return c ? ItemType::kEscapedText : ItemType::kEnd;
 }
@@ -343,9 +342,8 @@ XmlParser::~XmlParser()
 std::string_view XmlParser::Path::reference::getName() const noexcept
 {
     charser it(*this);
-    charser name;
-    if(it.getc()) it.get_seek({' ','>','/'}, name, false);
-    return name;
+    if(it.skip()) it.getspan(it, {' ','>','/'}, false);
+    return it;
 }
 
 bool XmlParser::Path::reference::hasAttributes() const noexcept
@@ -358,13 +356,13 @@ std::vector<XmlParser::Attribute> XmlParser::Path::reference::getAttributes() co
 {
     charser it(*this);
     std::vector<Attribute> v;
-    charser name;
-    charser value;
     while(it.seek(lt_eq(' ')) && it.seek(gt(' '))) // "[blanks...][non-blank]"
     {
-        if(!it.get_seek('=', name, true)) break; // return name and skip '='
+		charser name;
+		if(!it.getspan(name, '=', true)) break;
         if (it.getc() != '"') break; // skip leaing quote
-        if(!it.get_seek('"', value, true)) break; // return value and skip trailing quote
+		charser value;
+		if (!it.getspan(value, '"', true)) break;
         v.push_back(Attribute{name, value});
     }
     return std::move(v);
@@ -416,13 +414,13 @@ bool XmlParser::FileWriter::openFiles(std::string dir,
     {
         dir.append(fname);
         dir += ('\0');
-        auto f = fopen(dir.data(), "wb");
+        std::ofstream f(dir.data(), ios_base::out | ios_base::binary);
         if(!f) 
         {
             closeFiles();
             return false;
         }
-        outputs.push_back(f);
+        push_back(std::move(f));
         dir.erase(pos);
     }
     return true;
@@ -431,13 +429,12 @@ bool XmlParser::FileWriter::openFiles(std::string dir,
 void XmlParser::FileWriter::write(const char * data, std::size_t n, 
     std::size_t userIndex)  noexcept
 {
-  _fwrite_nolock(data, 1, n, outputs[userIndex]);
+	at(userIndex).write(data, n);
 }
 
 void XmlParser::FileWriter::closeFiles() noexcept
 {
-    for(auto & f : outputs) { fclose(f);}
-    outputs.clear();
+    clear();
 }
 
 XmlParser::FileWriter::~FileWriter()
