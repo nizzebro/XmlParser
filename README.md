@@ -26,7 +26,7 @@ Currently supports utf-8 only.
                     std::cout << '\n';
                 }
             }
-            std::cout << "the end-tag </fruits> has been reached" << '\n';
+            std::cout << "the end-tag </fruits> is reached" << '\n';
         }
         else if(p.isPI() || p.isDTD() || p.isComment())
         {
