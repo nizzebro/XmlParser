@@ -1,5 +1,5 @@
 #include "processor.h"
-#include <cassert>
+
 #define _CRT_SECURE_NO_WARNINGS
 
 using namespace std;
@@ -14,15 +14,14 @@ bool XmlParser::loadNextChunk() noexcept
     _nReadTotal += nRead; 
 
     if (nRead) return true;
-
     _eof = true;
     if(ferror(_input)) _errorCode = ErrorCode::kErrReadFile;
     return false;
 }
 
 bool XmlParser::appendRestOfComment() noexcept 
-{   
-    while (appendline(_text, '-', true, true))
+{  
+    while (seek_append('-', true, _text, true))
     {
 		UChar c;
         while ((c =  appendc(_text)) == '-') {}
@@ -33,7 +32,7 @@ bool XmlParser::appendRestOfComment() noexcept
 
 bool XmlParser::appendRestOfCDATA() noexcept 
 {   
-    while (appendline(_text, ']',true, true))
+    while (seek_append(']',true, _text, true))
     {
 		UChar c;
         while ((c =  appendc(_text)) == ']') {}
@@ -45,102 +44,103 @@ bool XmlParser::appendRestOfCDATA() noexcept
 
 bool XmlParser::appendRestOfPI() noexcept 
 {   
-    while (appendline(_text, '?', true, true))
+    while (seek_append('?', true, _text, true))
     {
         if (appendc(_text) == '>') return true;
     }
     return false;    
 }
 
-
-XmlParser::ItemType XmlParser::loadTag() noexcept 
+XmlParser::ItemType XmlParser::loadTag()  noexcept
 {
-   getc(_text); // init with '<' and skip it;
-   auto c = appendc(_text);
-   if(c == '/') // End-tag: "</" + (any chars except '>')  + '>' 
-   {
-       if(appendline(_text,'>', true, true))
-           return ItemType::kSuffix;
-   }
-   else if(c == '?') // PI (Processor Instruction): "<?" + (any chars except "?>") + "?>" 
-   {
-       if(appendRestOfPI()) return ItemType::kPI; 
-   }
-   else if(c == '!') // comment, or DTD, or CData: "<!" + (any chars, comments or PI's ) + '>' 
-   {
-       // comments are: "<!--"  + (any chars except "-->") +  "-->"
-       // cData's are: "<[CDATA["  + (any chars except "]]>") +  "]]>"
-       // DTD's are: "<!"  + (any chars except '>' and, besides, nested DTD's, PI's or comments) +  ">"
+	
+	getc(_text); // init with '<' and skip it;
+	auto c = appendc(_text);
+	if (c == '/') // End-tag: "</" + (any chars except '>')  + '>' 
+	{
+		if (seek_append('>', true, _text, true))
+			return ItemType::kSuffix;
+	}
+	else if (c == '?') // PI (Processor Instruction): "<?" + (any chars except "?>") + "?>" 
+	{
+		if (appendRestOfPI()) return ItemType::kPI;
+	}
+	else if (c == '!') // comment, or DTD, or CData: "<!" + (any chars, comments or PI's ) + '>' 
+	{
+		// comments are: "<!--"  + (any chars except "-->") +  "-->"
+		// cData's are: "<[CDATA["  + (any chars except "]]>") +  "]]>"
+		// DTD's are: "<!"  + (any chars except '>' and, besides, nested DTD's, PI's or comments) +  ">"
 
-       // check if it is a comment, CData or DTD
+		// check if it is a comment, CData or DTD
 
-        auto n = append_if(_text, "--");
+		if (skip_append(_text, "--"))
+		{
+			if (appendRestOfComment()) return ItemType::kComment;
+			return ItemType::kEnd;
+		}
 
-        if(n == 2)  
-        {
-            if (appendRestOfComment()) return ItemType::kComment;
-            return ItemType::kEnd;
-        }
+		else if (getLevel() && skip_append(_text, "[CDATA["))
+		{
+			if (_options & Options::kKeepCDATAtags) _text.clear();
 
-        else if(getLevel() && append_if(_text, "[CDATA[") == 7)
-        {  
-            if(_options & Options::kKeepCDATAtags) _text.clear();
+			if (appendRestOfCDATA())
+			{
+				if (_options & Options::kKeepCDATAtags) _text.erase(_text.size() - 3);
+				return  ItemType::kCData;
+			}
+			return ItemType::kEnd;
+		}
 
-            if (appendRestOfCDATA())
-            {
-                if(_options & Options::kKeepCDATAtags) _text.erase(_text.size() - 3); 
-                return  ItemType::kCData; 
-            }
-            return ItemType::kEnd;
-        }
+		// DTD
 
-        // DTD
+		int iNested = 1;        // count matching '< >'
 
-        int iNested = 1;        // count matching '< >'
+		while (c = seek_append({ '<','>' }, true, _text, true))
+		{
+			if (c == '<')  // "...<"
+			{
+				c = appendc(_text);
 
-        while (c = appendline(_text, {'<','>'}, true, true))
-        {
-            if (c == '<')  // "...<"
-            {   
-                c = appendc(_text); 
+				if (c == '!') // "<!-" comment?
+				{
+					if (skip_append(_text, "--"))
+					{
+						if (!appendRestOfComment()) break;
+					}
+				}
 
-                if (c == '!') // "<!-" comment?
-                {
-                    if(append_if(_text, "--") == 2)
-                    {
-                        if (!appendRestOfComment()) break;
-                    } 
-                } 
+				else if (c == '?') // "...<?"
+				{
+					if (!appendRestOfPI()) break;
+				}
 
-                else if(c == '?') // "...<?"
-                {
-                    if(!appendRestOfPI()) break; 
-                }
+				else if (!c) break;
+				else ++iNested;
+			}
+			else // '...>'
+			{
+				if ((--iNested) == 0) return ItemType::kDTD;
+				// // TODO or not : if getLevel() error - DTD shouldn't appear inside elements.
 
-                else if(!c) break;
-                else ++iNested;          
-            }
-            else // '...>'
-            {  
-                if((--iNested) == 0) return ItemType::kDTD;
-                // // TODO or not : if getLevel() error - DTD shouldn't appear inside elements.
+			} // end if '<' or '>'
+		}
+	}
+	else if (c) // start-tag
+	{
+		// append until '>' but check if it appended already; "<>" is odd but anyway...
+		// still, TODO: better checks for first character maybe
+		if (c != '>' && seek_append('>', true, _text, true))
+		{
+			if (_text[_text.size() - 2] != '/') return ItemType::kPrefix;
+			return ItemType::kSelfClosing;
+		}
+	}
 
-            } // end if '<' or '>'
-        } 
-   } 
-   else if(c) // start-tag
-   {
-       // append until '>' but check if it appended already; "<>" is odd but anyway...
-       // still, TODO: better checks for first character maybe
-        if(c != '>' && appendline(_text, '>', true, true))
-        {
-            if(_text[_text.size() - 2] != '/') return ItemType::kPrefix;
-            return ItemType::kSelfClosing;
-        }
-   }
-
-   return  ItemType::kEnd;   
+	return  ItemType::kEnd;
 }
+
+
+
 
 void append_utf8(UChar c, std::string& dst)
 {
@@ -167,13 +167,11 @@ void XmlParser::unescapeText() noexcept
 {
     _tmp.clear();
     charser it(_text);
-    for(;;)
+    while(it.seek_append('&', true, _tmp)) // search for '&'; skip it but do not append
     {
-		// search for '&'; skip it but do not append
-        if(!it.appendline(_tmp, '&', true)) break;
         charser tok; // mnemonic to resolve
 		// search for ';'; skip it but do not append to the mnemonic 
-        if(!it.getspan(tok, ';', true))
+        if(!it.seek_span(';', true, tok))
         {
 			// end of text but no ';'? bad... but let's leave it as is
 			_tmp += '&';
@@ -181,9 +179,9 @@ void XmlParser::unescapeText() noexcept
 			_tmp += ';';
             break;
         }
-        if (tok.skip_if('#'))
+        if (tok.skip('#'))
         {
-            int radix = tok.skip_if('x')? 16 :10;
+            int radix = tok.skip('x')? 16 :10;
             *const_cast<char*>(tok.end()) =  '\0'; // replace ';' with zero for strtoul
             auto val = strtoul(tok.get(), 0, radix);
             append_utf8(val, _tmp);
@@ -212,70 +210,68 @@ void XmlParser::unescapeText() noexcept
 XmlParser::ItemType XmlParser::loadText() noexcept
 {
 
-    auto c = appendline(_text, '<', false);
+    auto c = seek_append('<', false, _text);
     if (c && (_options & Options::kUnescapeText)) unescapeText();
     return c ? ItemType::kEscapedText : ItemType::kEnd;
 }
-
 
 
 bool XmlParser::next() noexcept
 {
     if(!isEnd()) 
     {
-        // clear buffer for append() and also to be empty at eof - for loop-copy while next()
-        _text.clear(); 
-        // check if current one is a suffix or a self-closing element
-        // (self-closing ones are pushed too, for uniformity) and pop it
-        
-        if(isElementEnd())  _path.popItem(); 
+		
+		// if previous elem ended, remove it from stack
 
-        // skip ascii blanks
-        auto c = seek(gt(' ')); 
+		if (isElementEnd()) _path.popItem();
 
-        if(c == '<') // tag
+        _text.clear();			// empty text buffer
+
+        auto c = seek(gt(' ')); // skip ascii blanks
+
+        if(c == '<') // a tag?
         {
-            _itemType = loadTag(); 
+			_itemType = loadTag();
+
             if(isElement()) 
             {
                 _path.pushItem(_text) ; // self-closing ones are pushed too, for uniformity
                 return true;
             }
 
-            if (isEnd()) _errorCode =  ErrorCode::kErrTagUnclosed;
+			if (!isEnd())
+			{
+				if (getLevel()) return true;
 
-            if (getLevel()) return true;
-
-            // document level: handle end-tags alone 
-            if (isSuffix())
-            {
-                _itemType = ItemType::kEnd; 
-                _errorCode = ErrorCode::kErrTagUnmatch;
-                return true;
-            }
-            // another odd thing for the document level would be CDATA, but loadTag() checks
-            // for getLevel() - so that if it appears here, it is handled as DTD...
+				// document level
+				if (!isSuffix()) return true;
+				// end-tag alone:
+				_errorCode = ErrorCode::kErrTagUnmatch;
+				// another odd thing for the document level would be CDATA, but loadTag() checks
+				// for getLevel() - so that if it appears here, it is handled as DTD..
+			}
+        
+			return false;
         }
 
-        if(c) // some characters 
+        if(c) // character data
         {
-            _itemType = loadText();
+
+			_itemType = loadText();
+
 
             if (getLevel())  return true;
-
+			
             // document level; skip anything outside elements as BOM or garbage 
-            if (seek('<')) return next(); 
-            // eof, no errors
-            _itemType = ItemType::kEnd; 
-            return true;
+            return next(); 
         }
 
         // eof
         _itemType = ItemType::kEnd;
-        if(getLevel()) _errorCode = ErrorCode::kErrTagUnmatch;
-        return true;
-    }
+		
+		if (getLevel()) _errorCode = ErrorCode::kErrTagUnmatch;
 
+    }
     return false;
 }
 
@@ -303,6 +299,9 @@ XmlParser::XmlParser(std::size_t bufferSize) noexcept :
 bool XmlParser::openFile(const char* path) noexcept
 {
     closeFile();  // if open, closes and resets context
+	_nReadTotal = 0;
+	_errorCode = ErrorCode::kErrOk;
+	_eof = false;
 
     _input = fopen(path, "rb");
     if(setvbuf(_input,  nullptr, _IONBF, 0 ) == 0)
@@ -319,10 +318,7 @@ void XmlParser::closeFile() noexcept
 {
     if(_input) 
     {
-        fclose(_input);
-        _errorCode = ErrorCode::kErrOk;
-        _nReadTotal = 0;
-        _eof = false;
+        fclose(_input); 
         _itemType = ItemType::kEnd;  // prevents next()
         _path.clear();
         _text.clear();
@@ -342,7 +338,7 @@ XmlParser::~XmlParser()
 std::string_view XmlParser::Path::reference::getName() const noexcept
 {
     charser it(*this);
-    if(it.skip()) it.getspan(it, {' ','>','/'}, false);
+    if(it.skip()) it.seek_span({' ','>','/'}, false, it);
     return it;
 }
 
@@ -359,10 +355,10 @@ std::vector<XmlParser::Attribute> XmlParser::Path::reference::getAttributes() co
     while(it.seek(lt_eq(' ')) && it.seek(gt(' '))) // "[blanks...][non-blank]"
     {
 		charser name;
-		if(!it.getspan(name, '=', true)) break;
+		if(!it.seek_span('=', true, name)) break;
         if (it.getc() != '"') break; // skip leaing quote
 		charser value;
-		if (!it.getspan(value, '"', true)) break;
+		if (!it.seek_span('"', true, value)) break;
         v.push_back(Attribute{name, value});
     }
     return std::move(v);
@@ -385,7 +381,8 @@ void XmlParser::Path::pushItem(const std::string& s) noexcept
 void XmlParser::Path::popItem() noexcept
 {
     _offsets.pop_back(); 
-    _tags.erase(_offsets.back());
+	std::size_t i = !_offsets.empty() ? _offsets.back() : 0;
+    _tags.erase(i);
 }
 
 

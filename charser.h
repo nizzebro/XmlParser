@@ -151,10 +151,23 @@ class charser_base
     void assign(const char_type* p, std::size_t n) noexcept 
     {  _ptr = p;  _end = p + n; }
 
+	void clear() noexcept { assign(0, 0); }
+
+	void setBegin(const char_type* p) noexcept {_ptr = p;}
+	void setEnd(const char_type* p) noexcept { _end = p; }
+	void setSize(std::size_t n) noexcept { _end = _ptr + n;}
+
     /// Gets pointer to the current position
     const char_type* get() const noexcept { return  _ptr;} 
+	const char_type* begin() const noexcept { return  _ptr; }
     /// Gets pointer to the end of sequence
     const char_type* end() const noexcept {return  _end;} 
+	/// Imcrement ops; unsafe; provided only for range-based loop support
+	charser_base<T>& operator++() const noexcept
+	{ ++_ptr; return *this; }
+	charser_base<T> operator++(int) const noexcept 
+	{ auto it = *this; ++_ptr; return it; }
+
     /// Gets the size avalable, in code points
     std::size_t size() const noexcept  {return end() - get();} 
     /// Returns true if size == 0
@@ -243,29 +256,29 @@ class charser_impl_fixed: public charser_base<T>
     using base_type::operator bool;
     using base_type::operator typename base_type::stl_string_view;
 
-	///\brief Increments the pointer with no bound check
-	void unchecked_skip(std::size_t n = 1) noexcept { this->_ptr += n;}
+	void unchecked_advance(std::size_t n = 1) noexcept { this->_ptr += n;}
 
-	///\brief Increments the pointer
-	///\return False if the end of text has been reached
-    bool skip(std::size_t n = 1) noexcept  
+    bool advance(std::size_t n) noexcept  
     {   
-		unchecked_skip(n);
+		unchecked_advance(n);
 		if (this->_end > this->_ptr) return true;
 		this->_ptr = this->_end;
 		return false;
     }
 
-	///\brief Gets current char without increment
-    constexpr UChar peek() const noexcept { return !this->empty()? *this->_ptr :0; }
+    constexpr UChar peek() const noexcept 
+	{ 
+		if(!this->empty()) return  *this->_ptr;
+		return 0;
+	}
 
-	///\brief Gets current char and increments the pointer
-    constexpr UChar getc() noexcept  { return !this->empty()? (*this->_ptr++) :0;}
+	constexpr UChar getc() noexcept 
+	{ 
+		auto c = peek();
+		if(c)this->_ptr++;
+		return c; 
+	}
 
-	///\brief Searches for a character with advancing the pointer.
-	/// \param predicate Character to search for.
-	/// \param skipFound If true and q is found, the pointer is set to the next char.
-	/// \return Character found or 0 if the end of data was reached.
 	constexpr UChar seek(predicate q, bool skipFound = false) noexcept
 	{
 		for (auto n = this->size(); n != 0; ++this->_ptr, --n)
@@ -278,19 +291,16 @@ class charser_impl_fixed: public charser_base<T>
 		return  0;
 	}
 
-
-	///\brief Advances the pointer while data is matching to a string.
-	/// \param s String to compare
-	/// \param len Length of s
-	/// \return Number of chars matched
-    constexpr std::size_t skip_if(const char_type* s, std::size_t len) noexcept
+    constexpr std::size_t skip_chars(stl_string_view s) noexcept
     {
-        if(len = std::min(this->size(), len))
+		auto p = s.data();
+		auto len = std::min(this->size(), s.size());
+		if(len)
         {
             auto nLeft = len; 
-            while(*s == *this->_ptr)
+            while(*p == *this->_ptr)
             {
-                ++this->_ptr; ++s;
+                ++this->_ptr; ++p;
                 if(--nLeft == 0) break; 
             } 
             len -= nLeft;
@@ -298,56 +308,30 @@ class charser_impl_fixed: public charser_base<T>
         return len;
     } 
 
-	///\brief Searches for a substring with advancing the pointer.
-	/// \param s Substring to search
-	/// \param len Length of s
-	/// \param skipFound If true and s is found, the pointer is set to end of s.
-	/// \return True if s was found, false if the end of text was reached.
-	constexpr bool seek(const char_type* s, std::size_t len, bool skipFound = false, 
-		bool appendFound = false) noexcept
+	constexpr bool seek(stl_string_view s, bool skipFound = false) noexcept
 	{
 		if (!skipFound)
 		{
 			do {
-				auto n = skip_if(s, len);
+				auto n = skip_chars(s);
 				this->_ptr -= n;
-				if (len == n) return true;
-			} while (skip());
+				if (s.size() == n) return true;
+			} while (advance(1));
 			return false;
 		}
 		else
 		{
 			do {
-				auto n = skip_if(s, len);
-				if (len == n) return true;
+				auto n = skip_chars(s);
+				if (s.size() == n) return true;
 				this->_ptr -= n;
-			} while (skip());
+			} while (advance(1));
 			return false;
 		}
 	}
 
-	///\brief Same as seek(s, n, skipFound) but also returns the span of search
-	/// \param appendFound If true and s is found, adds it to the span as well.
-	constexpr UChar getspan(self_type& span, const char_type* s, std::size_t len, bool skipFound,
-		bool appendFound = false) noexcept
-	{
-		auto p1 = this->get();
-		auto b = seek(s, len, false);
-		auto p2 = this->_ptr;
-		if (b)
-		{
-			p2 += (appendFound ? len : 0);
-			this->_ptr += (skipFound ? len : 0);
-		}
-		span._ptr = p1;
-		span._end = p2;
-		return b;
-	}
-
-	///\brief Same as seek(q, skipFound) but also returns the span of search
-	/// \param appendFound If true and q is found, adds it to the span as well.
-	constexpr UChar getspan(self_type& span, predicate q, bool skipFound,
-		bool appendFound = false) noexcept
+	constexpr UChar seek_span(predicate q, bool skipFound,
+		self_type& span, bool appendFound = false) noexcept
 	{
 		auto p1 = this->get();
 		auto c = seek(q, false);
@@ -361,32 +345,78 @@ class charser_impl_fixed: public charser_base<T>
 		span._end = p2;
 		return c;
 	}
+
+	constexpr bool seek_span(stl_string_view s, bool skipFound,
+		self_type& span, bool appendFound = false) noexcept
+	{
+		auto p1 = this->get();
+		auto b = seek(s, false);
+		auto p2 = this->_ptr;
+		if (b)
+		{
+			p2 += (appendFound ? s.size() : 0);
+			this->_ptr += (skipFound ? s.size() : 0);
+		}
+		span._ptr = p1;
+		span._end = p2;
+		return b;
+	}
+	constexpr bool endsWith(predicate q) noexcept
+	{
+		auto c = 0;
+		if (!this->empty()) return q(*(this->end() - 1));
+		return false;
+		
+	}
+
+	constexpr void trimTrailing(predicate q) noexcept
+	{
+		while (endsWith(q)) { --this->_end; }
+	}
+
 };
 
 template<typename T>
 class charser_impl_utf8: public charser_base<T> {
 
-	constexpr UChar _getc1() noexcept	{return (*this->_ptr++) & 0x3f;}
+	constexpr UChar _getc1() noexcept
+	{
+		if (!this->empty())
+		{
+			UChar c = *this->_ptr++;
+			return c & 0x3f;
+		}
+		return 0;
+	}
 	constexpr UChar _getc2() noexcept
 	{
-		UChar c = (_getc1() << 6) & 0x7ff;
-		return c + !this->empty() ? _getc1() : 0x80;
+		UChar c = _getc1() << 6;
+		if (!this->empty()) return c + _getc1();
+		return 0;
 	}
 	constexpr UChar _getc3() noexcept
 	{
-		UChar c = (_getc1() << 12) & 0xffff;
-		UChar cp = !this->empty() ? (*this->_ptr++) : 0x80;
-		c += (((0xff & cp) << 6) & 0xfff);
-		return c + !this->empty() ? _getc1() : 0x80;
+		UChar c = _getc1() << 12;
+		if (!this->empty())
+		{
+			c += _getc1() << 6;
+			if (!this->empty()) return c + _getc1();
+		}
+		return 0;
 	}
 	constexpr UChar _getc4() noexcept
 	{
-		UChar c = (_getc1() << 18) & 0x1fffff;
-		UChar cp = !this->empty() ? (*this->_ptr++) : 0x80;
-		c += (((0xff & cp) << 12) & 0x3ffff);
-		cp = !this->empty() ? (*this->_ptr++) : 0x80;
-		c += (((0xff & cp) << 6) & 0xfff);
-		return c + !this->empty() ? _getc1() : 0x80;
+		UChar c = _getc1() << 18;
+		if (!this->empty())
+		{
+			c += _getc1() << 12;
+			if (!this->empty())
+			{
+				c += _getc1() << 6;
+				if (!this->empty()) return c + _getc1();
+			}
+		}
+		return 0;
 	}
 
 	constexpr UChar _getc() noexcept
@@ -419,7 +449,7 @@ class charser_impl_utf8: public charser_base<T> {
 	// after them (i.e. 10xxxxxx ones), in such case, the char value is arbitrary.
 	// Extra trailing octets, if any, are just ignored and skipped.
 
-	void unchecked_skip(std::size_t n = 1) noexcept 
+	void unchecked_advance(std::size_t n = 1) noexcept 
 	{ 
 		for (; ((*this->_ptr & 0xC0) == 0x80); ++this->_ptr) {} // skip extra trailing cp-s, if any
 		while (n)
@@ -431,7 +461,7 @@ class charser_impl_utf8: public charser_base<T> {
 		}
 	}
 
-	constexpr bool skip(std::size_t n = 1) noexcept
+	constexpr bool advance(std::size_t n = 1) noexcept
 	{
 		for (;;++this->_ptr) // skip extra trailing cp-s, if any
 		{ 
@@ -472,24 +502,19 @@ class charser_impl_utf8: public charser_base<T> {
         return  0;
     }
 
-	constexpr std::size_t skip_if(const char_type* s, std::size_t len) noexcept
+	constexpr bool seek(stl_string_view s, bool skipFound = false) noexcept
 	{
 		//TODO: impl
 		return  0;
 	}
-	constexpr bool seek(const char_type* cstr, std::size_t n, bool skipFound = false) noexcept
+	constexpr UChar seek_span(predicate q, bool skipFound,
+		self_type& span, bool appendFound = false, bool appendSpan = false) noexcept
 	{
 		//TODO: impl
 		return  0;
 	}
-	constexpr UChar getspan(self_type& span, predicate q, bool skipFound = false,
-		bool appendFound = false) noexcept
-	{
-		//TODO: impl
-		return  0;
-	}
-	constexpr UChar getspan(self_type& span, const char_type* s, std::size_t len, bool skipFound = false,
-		bool appendFound = false) noexcept
+	constexpr bool seek_span(stl_string_view s, bool skipFound,
+		self_type& span, bool appendFound = false, bool appendSpan = false) noexcept
 	{
 		//TODO: impl
 		return  0;
@@ -558,24 +583,32 @@ class basic_charser: public Impl {
     ///@{
     /// Increment; get value 
 
-	///\brief Increments the pointer with no bound check
-	void unchecked_skip(std::size_t n = 1) noexcept
-	{return base_type::unchecked_skip(n); }
+	void unchecked_advance(std::size_t n) noexcept
+	{ return base_type::unchecked_advance(n); }
 
 	///\brief Increments the pointer
 	///\return False if the end of text has been reached
-	bool skip(std::size_t n = 1) noexcept
-	{return base_type::skip(n); }
+	bool advance(std::size_t n) noexcept{return base_type::advance(n); }
 
-	///\brief Increment the pointer if current char is the same as the given one
-	bool skip_if(predicate q) noexcept
+	bool skip() noexcept { return advance(1); }
+
+	///\brief Increment the pointer only if the current char is the same as the given one
+	///\return True if chars were the same and the pointer was inctremented
+	bool skip(predicate q) noexcept
 	{
-		auto p = base_type::get();
-		auto c = base_type::getc();
-		if (q(c)) return true;
-		this->_ptr = p;
+		if (!this->empty())
+		{
+			auto p = base_type::get();
+			if (q(getc())) return true;
+			this->_ptr = p;
+		}
 		return false;
 	}
+	///\brief Advances the pointer while data is matching to a string.
+	/// \param s String to compare
+	/// \return true if the whole string passed through
+	constexpr bool skip(stl_string_view s) noexcept
+	{ return base_type::skip_chars(s) == s.size();}
 
 	///\brief Gets current char without increment
 	constexpr UChar peek() const noexcept 
@@ -597,65 +630,88 @@ class basic_charser: public Impl {
 	constexpr UChar seek(predicate q, bool skipFound = false) noexcept
 	{ return base_type::seek(q, skipFound);}
 
-	///\brief Advances the pointer while data is matching to a string.
-	/// \param s String to compare
-	/// \param len Length of s
-	/// \return Number of chars matched
-	constexpr std::size_t skip_if(const char_type* s, std::size_t len) noexcept
-	{ return base_type::skip_if(s, len);}
-
-	///\brief Same as skip(s.data(), s.size())
-	constexpr std::size_t skip_if(stl_string_view s) noexcept
+	///\brief Same as seek(q, skipFound) but also returns the span of search
+	///\param span Received the span of search
+	/// \param appendFound If true, the found char is added to the span as well.
+	/// \param appendSpan If true, the given span is not rewritten but extended.
+	constexpr UChar seek_span(predicate q, bool skipFound, self_type& span,
+		bool appendFound = false) noexcept
 	{
-		return skip_if(s.data(), s.size());
+		return base_type::seek_span(q, skipFound, span, appendFound);
 	}
 
 	///\brief Searches for a substring with advancing the pointer.
 	/// \param s Substring to search
-	/// \param len Length of s
 	/// \param skipFound If true and s is found, the pointer is set to end of s.
 	/// \return True if s was found, false if the end of text was reached.
-	constexpr bool seek(const char_type* s, std::size_t len, bool skipFound = false) noexcept
-	{return base_type::seek(s, len, skipFound);}
 
 	///\brief = seek(s.data(), s.size(), skipFound). 
 	constexpr bool seek(stl_string_view s, bool skipFound = false) noexcept
 	{
-		return seek(s.data(), s.size(), skipFound);
+		return base_type::seek(s, skipFound);
 	}
 
-	///\brief Same as seek(q, skipFound) but also returns the span of search
-	/// \param appendFound If true and q is found, adds it to the span as well.
-	constexpr UChar getspan(self_type& span, predicate q, bool skipFound,
-		bool appendFound = false) noexcept
-	{ return base_type::getspan(span, q, skipFound, appendFound);}
-
-	///\brief Same as seek(s, n, skipFound) but also returns the span of search
-	/// \param appendFound If true and s is found, adds it to the span as well.
-	constexpr UChar getspan(self_type& span, const char_type* s, std::size_t len,
-		bool skipFound,  bool appendFound = false) noexcept
-	{ return base_type::getspan(span, s, len, skipFound, appendFound);}
-
-	///\brief = getspan(dst, s.data(), s.size(), skipFound, appendFound). 
-	constexpr bool getspan(self_type& span, stl_string_view s, bool skipFound,
+	///\brief Same as seek(s, skipFound) but also returns the span of search
+	///\param span Received the span of search
+	/// \param appendFound If true, the found substring is added to the span as well.
+	/// \param appendSpan If true, the given span is not rewritten but extended.
+	constexpr bool seek_span(stl_string_view s, bool skipFound, self_type& span,
 		bool appendFound = false) noexcept
 	{
-		return getspan(span, s.data(), s.size(), skipFound, appendFound);
+		return base_type::seek_span(s, skipFound, span, appendFound);
 	}
 
-
+	///\brief Returns true if the sequence starts with a given char.
+	constexpr bool startsWith(predicate q) const noexcept
+	{
+		auto c = peek();
+		return (c? q(c) : 0);
+	}
 
 	///\brief Returns true if the sequence starts with a given string.
 	constexpr bool startsWith(stl_string_view s) const noexcept
 	{
 		self_type it(*this);
-		return it.skip_if(s) == s.size();
+		return it.skip(s);
 	}
+	///\brief Returns true if the sequence ends with a given char.
+	constexpr bool endsWith(predicate q) const noexcept
+	{
+		return base_type::endsWith(q);
+	}
+
+
 	///\brief Returns true if the sequence ends with a given string.
 	constexpr bool endsWith(stl_string_view s) const noexcept
 	{
+		if(s.size() > this->size()) return false;
 		self_type it(this->end() - s.size(), s.size());
-		return it.skip_if(s) == s.size();
+		return it.skips(s, s.size());
+	}
+
+	constexpr bool contains(predicate q) const noexcept
+	{
+		self_type it(*this);
+		return(it.seek(q));
+	}
+
+	constexpr bool contains(stl_string_view s) const noexcept
+	{
+		self_type it(*this);
+		return(it.seek(s));
+	}
+
+	constexpr void trimLeading(predicate q) noexcept
+	{
+		while (skip(q)) {}
+	}
+	constexpr void trimTrailing(predicate q) noexcept
+	{
+		base_type::trimTrailing(q);
+	}
+	constexpr void trim(predicate q) noexcept
+	{
+		trimLeading(q); trimTrailing(q);
 	}
 
 	///@}
@@ -686,19 +742,20 @@ class basic_charser: public Impl {
 	/// \param dst String to which to append the span.
 	/// \param appendFound If true, appends the found char to the dst as well.
     template<typename A>
-    constexpr UChar appendline(stl_string<A>& dst, predicate q,
-		bool skipFound, bool appendFound = false) noexcept
+    constexpr UChar seek_append(predicate q, bool skipFound, stl_string<A>& dst, 
+		bool appendFound = false) noexcept
     { 
 		self_type span;
-		auto c = getspan(span, q, skipFound, appendFound);
+		auto c = seek_span(q, skipFound, span, appendFound);
 		dst.append(span);
 		return c;
     }
+
 	///\brief Clears the string and calls seek_append(q, true, dst, false).
 	template<typename A>
 	constexpr bool getline(stl_string<A>& dst, predicate q = '\n') noexcept
 	{
-		dst.clear(); return appendline(q, dst);
+		dst.clear(); return seek_append(q, true, dst, false);
 	}
 
     ///@}
@@ -727,8 +784,8 @@ class chunk_charser : public charser_impl_fixed<char>
    auto reload() noexcept { return static_cast<D*>(this)->loadNextChunk(); }
 
    using charser_impl_fixed<char>::seek;
-   using charser_impl_fixed<char>::getspan;
-   using charser_impl_fixed<char>::skip;
+   using charser_impl_fixed<char>::seek_span;
+   using charser_impl_fixed<char>::skip_chars;
 
    public:
     using base_type = charser_impl_fixed<char>;
@@ -779,7 +836,7 @@ class chunk_charser : public charser_impl_fixed<char>
 	/// Increment; get value 
 
 	///\brief  Advances the pointer; returns false at the EOF. 
-	constexpr bool skip(std::size_t n = 1) noexcept
+	constexpr bool advance(std::size_t n) noexcept
 	{
 		do
 		{
@@ -789,6 +846,37 @@ class chunk_charser : public charser_impl_fixed<char>
 			n += d;
 		} while (reload());
 		return false;
+	}
+	constexpr bool skip() noexcept {return  advance(1);	}
+
+	///\brief Increment the pointer if current char is the same as the given one
+	bool skip(predicate q)  noexcept
+	{
+		auto p = this->get();
+		auto c = getc();
+		if (c)
+		{
+			if (q(c)) return true;
+			this->_ptr = p;
+			return false;
+		}
+		return  reload() ? skip(q) : false;
+	}
+
+
+	///\brief Advances pointer while current data matches to a given string.
+	/// \param s String to compare with.
+	/// \return True if the whole string was passed through.
+	constexpr bool skip(stl_string_view s) noexcept
+	{
+		auto p = s.data();
+		std::size_t nLeft = s.size();
+		do {
+			auto n = base_type::skip(stl_string_view{ p, nLeft });
+			p += n;
+			nLeft -= n;
+		} while (nLeft || (empty() && reload()));
+		return !nLeft;
 	}
 
 	///\brief Gets current char or 0 at the EOF; no increment.
@@ -822,19 +910,7 @@ class chunk_charser : public charser_impl_fixed<char>
 		dst.clear();  return  appendc(dst);
 	}
 
-	///\brief Increment the pointer if current char is the same as the given one
-	bool skip_if(predicate q) const noexcept
-	{
-		auto p = this->get();
-		auto c = getc();
-		if (c)
-		{
-			if (q(c)) return true;
-			this->_ptr = p;
-			return false;
-		}
-		return  reload() ? skip_if(q) : false;
-	}
+
 
 	///@{ 
 	/// Search-and-advance
@@ -858,14 +934,16 @@ class chunk_charser : public charser_impl_fixed<char>
 	/// \param appendFound If true, appends the found substring to the dst
 	/// as well.
 	template<typename A>
-	constexpr UChar appendline(stl_string<A>& dst, predicate q, bool skipFound,
-		bool appendFound = false) noexcept
+	constexpr UChar seek_append(predicate q, bool skipFound,
+		stl_string<A>& dst, bool appendFound = false) noexcept
 	{
+
 		charser it;
 		do
 		{
-			auto c = base_type::getspan(it, q, skipFound, appendFound);
+			auto c = base_type::seek_span(q, skipFound, it, appendFound);
 			dst.append(it);
+	
 			if (c) return c;
 		} while (reload());
 
@@ -876,50 +954,25 @@ class chunk_charser : public charser_impl_fixed<char>
 	template<typename A>
 	constexpr UChar getline(stl_string<A>& dst, predicate q = '\n') noexcept
 	{
-		dst.clear(); return appendline(dst, q, true);
+		dst.clear(); return seek_append(q, true.dst, false);
 	}
 
-	///\brief Advances pointer while current data matches to a given string.
-	/// \param s String to compare with.
-	/// \param len Length of the string.
-	/// \return Number of characters matched.
-	constexpr std::size_t skip_if(const char_type* s, std::size_t len) noexcept
-	{
-		std::size_t nLeft = len;
-		do {
-			auto n = base_type::skip_if(s, nLeft);
-			s += n;
-			nLeft -= n;
-		} while (nLeft || (empty() && reload()));
-		return len - nLeft;
-	}
 
-	///\brief Same as skip(s.data(), s.size()).
-	constexpr std::size_t skip_if(stl_string_view s) noexcept
-	{
-		return skip_if(s.data(), s.size());
-	}
 
 	///\brief Same as skip_if(s, len, dst) but appends the skipped chars to a string.
     template <typename A>
-    constexpr std::size_t append_if(stl_string<A>& dst, const char_type* s, std::size_t len) noexcept
+    constexpr bool skip_append(stl_string<A>& dst, const stl_string_view s) noexcept
     {
-        std::size_t nLeft = len;
+		auto p = s.data();
+		auto nLeft = s.size();
         do {
             auto p = get();
-            auto n = skip_if(s, nLeft);
+			auto n = base_type::skip_chars(stl_string_view{ p, nLeft });
             dst.append(p, n);
-            s += n;
+            p += n;
             nLeft -= n;
         } while (nLeft || (empty() && reload()));
-        return len - nLeft;
-    }
-
-	///\brief Same as append_if(s.data(), s.size(), dst).
-    template <typename A>
-    constexpr std::size_t  append_if(stl_string<A>& dst, const stl_string_view s) noexcept
-    {
-        return append_if(dst, s.data(), s.size());
+        return !nLeft;
     }
 
 };
