@@ -1,6 +1,6 @@
 # XmlParser
-A simple C++ class for fast parsing of XML files, aimed at a maximum speed and minimum overhead. <br>
-Works as a stream with buffer which reads fixed-sized chunks. Entities are processed one-by-one.  <br>
+A simple C++ class for parsing large XML, aimed at a maximum speed and minimum overhead. <br>
+Works as a stream with its own buffer reading fixed-sized chunks. Entities are processed one-by-one.  <br>
 Currently supports utf-8 only.
 
     XmlParser p;
@@ -14,7 +14,7 @@ Currently supports utf-8 only.
                 std::cout << a.name << '=' << a.value << '\n';
             }
             auto i = p.getLevel();
-            while(p.next(i)) // until </fruits>; as for <fruits/>, will return false immediately
+            while(p.next(i)) // loop until </fruits> (or <fruits/> - which returns immediately)
             {
                 if(p.isText("apples")) // a text block of an <apples> element ? 
                 {
@@ -26,7 +26,7 @@ Currently supports utf-8 only.
                     std::cout << '\n';
                 }
             }
-            std::cout << "the end-tag </fruits> has been reached" << '\n';
+            std::cout << "the end-tag </fruits> is reached" << '\n';
         }
         else if(p.isPI() || p.isDTD() || p.isComment())
         {
