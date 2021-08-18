@@ -5,14 +5,12 @@
 using namespace std;
 using namespace char_parsers;
 
-
 bool XmlParser::loadNextChunk() noexcept
 {
     // no file checks here; rely on ItemType::kEnd which prevents next()
     size_t nRead = _fread_nolock(_buffer, 1, _chunkSize, _input);
-    assign(_buffer, nRead);
+    assign(_buffer, _buffer + nRead);
     _nReadTotal += nRead; 
-
     if (nRead) return true;
     _eof = true;
     if(ferror(_input)) _errorCode = ErrorCode::kErrReadFile;
@@ -41,7 +39,6 @@ bool XmlParser::appendRestOfCDATA() noexcept
     return false;    
 }
 
-
 bool XmlParser::appendRestOfPI() noexcept 
 {   
     while (seek_append('?', true, _text, true))
@@ -53,7 +50,6 @@ bool XmlParser::appendRestOfPI() noexcept
 
 XmlParser::ItemType XmlParser::loadTag()  noexcept
 {
-	
 	getc(_text); // init with '<' and skip it;
 	auto c = appendc(_text);
 	if (c == '/') // End-tag: "</" + (any chars except '>')  + '>' 
@@ -73,13 +69,13 @@ XmlParser::ItemType XmlParser::loadTag()  noexcept
 
 		// check if it is a comment, CData or DTD
 
-		if (skip_append(_text, "--"))
+		if (skip_append_while(_text, "--"))
 		{
 			if (appendRestOfComment()) return ItemType::kComment;
 			return ItemType::kEnd;
 		}
 
-		else if (getLevel() && skip_append(_text, "[CDATA["))
+		else if (getLevel() && skip_append_while(_text, "[CDATA["))
 		{
 			if (_options & Options::kKeepCDATAtags) _text.clear();
 
@@ -103,7 +99,7 @@ XmlParser::ItemType XmlParser::loadTag()  noexcept
 
 				if (c == '!') // "<!-" comment?
 				{
-					if (skip_append(_text, "--"))
+					if (skip_append_while(_text, "--"))
 					{
 						if (!appendRestOfComment()) break;
 					}
@@ -138,9 +134,6 @@ XmlParser::ItemType XmlParser::loadTag()  noexcept
 
 	return  ItemType::kEnd;
 }
-
-
-
 
 void append_utf8(UChar c, std::string& dst)
 {
@@ -179,20 +172,20 @@ void XmlParser::unescapeText() noexcept
 			_tmp += ';';
             break;
         }
-        if (tok.skip('#'))
+        if (tok.skip_if('#'))
         {
-            int radix = tok.skip('x')? 16 :10;
+            int radix = tok.skip_if('x')? 16 :10;
             *const_cast<char*>(tok.end()) =  '\0'; // replace ';' with zero for strtoul
             auto val = strtoul(tok.get(), 0, radix);
             append_utf8(val, _tmp);
             continue;
         }
         char c = 0;
-        if (tok == "quot") c = 0x22;
-        else if (tok == "amp") c = 0x26;
-        else if (tok == "apos") c = 0x27;
-        else if (tok == "lt") c = 0x3C;
-        else if (tok == "gt") c = 0x3E;
+        if (tok == ("quot")) c = 0x22;
+        else if (tok == ("amp")) c = 0x26;
+        else if (tok == ("apos")) c = 0x27;
+        else if (tok == ("lt")) c = 0x3C;
+        else if (tok == ("gt")) c = 0x3E;
         else // unknown, write it as is 
         {
             _tmp += '&';
@@ -202,7 +195,6 @@ void XmlParser::unescapeText() noexcept
         }
         _tmp += c;
         continue;
-
     }
     std::swap(_text, _tmp);
 }
@@ -214,7 +206,6 @@ XmlParser::ItemType XmlParser::loadText() noexcept
     if (c && (_options & Options::kUnescapeText)) unescapeText();
     return c ? ItemType::kEscapedText : ItemType::kEnd;
 }
-
 
 bool XmlParser::next() noexcept
 {
@@ -275,8 +266,6 @@ bool XmlParser::next() noexcept
     return false;
 }
 
-
-
 //=====================     Initialization    ==================================//
 
 XmlParser::XmlParser(std::size_t bufferSize) noexcept : 
@@ -292,9 +281,8 @@ XmlParser::XmlParser(std::size_t bufferSize) noexcept :
 {
     _chunkSize = bufferSize + (buffer_gran - 1) & ~(buffer_gran - 1);
     _buffer = new char[_chunkSize];
-    assign(_buffer, 0);
+    assign(_buffer, _buffer);
 }
-
 
 bool XmlParser::openFile(const char* path) noexcept
 {
@@ -322,7 +310,7 @@ void XmlParser::closeFile() noexcept
         _itemType = ItemType::kEnd;  // prevents next()
         _path.clear();
         _text.clear();
-        assign(_buffer, 0);
+        assign(_buffer, _buffer);
     }
 }
 
@@ -333,7 +321,6 @@ XmlParser::~XmlParser()
 }
 
 //=====================    Path  and tag components  ===========================//
-
 
 std::string_view XmlParser::Path::reference::getName() const noexcept
 {
@@ -384,7 +371,6 @@ void XmlParser::Path::popItem() noexcept
 	std::size_t i = !_offsets.empty() ? _offsets.back() : 0;
     _tags.erase(i);
 }
-
 
 //=====================     Write    ==================================//
 

@@ -5,9 +5,9 @@
 #include <vector>
 #include <fstream>
 
-class XmlParser: private char_parsers::chunk_charser<char,XmlParser> {
+class XmlParser: private char_parsers::chunk_charser<XmlParser> {
 
-    friend class char_parsers::chunk_charser<char, XmlParser>; 
+    friend class char_parsers::chunk_charser<XmlParser>; 
     static const int buffer_gran = 0x10000;  // read buffer alignment
 
     public:
@@ -142,7 +142,7 @@ class XmlParser: private char_parsers::chunk_charser<char,XmlParser> {
     ///@{
     /** Type and text of current item */
 
-    const ItemType& itemType =  _itemType; 
+	ItemType getItemType() const noexcept { return  _itemType; }
 
     /// Checks if the item is either start-tag or self-closing tag.
     bool isElement() const noexcept 
@@ -151,7 +151,10 @@ class XmlParser: private char_parsers::chunk_charser<char,XmlParser> {
 
     /// Checks if the item is element of specific name.
     bool isElement(const char* elementName) const noexcept 
-    { return isElement() && getName() == elementName;}
+    { 
+		auto s = getName();
+		return isElement() && s == elementName;
+	}
 
     /// Checks if the item is self-closing tag.
     bool isSelfClosing() const noexcept 
@@ -209,7 +212,7 @@ class XmlParser: private char_parsers::chunk_charser<char,XmlParser> {
     /// gets the tag's text including angle brackets.
     /// For ItemType::kEnd, the text is either empty or contains 
     /// an incomplete tag which produced error.
-    const std::string& text = _text; 
+	const std::string& getText() const noexcept { return _text; }
 
     ///}@
 
@@ -218,7 +221,7 @@ class XmlParser: private char_parsers::chunk_charser<char,XmlParser> {
 
     /// Current element's start tag
     Path::reference getStartTag() const noexcept
-    {return path[getLevel()];}
+    {return _path[getLevel()];}
 
     /// Current element's name; valid while current item
     /// is this element's start-tag, text, comment, PI or end-tag
@@ -262,10 +265,10 @@ class XmlParser: private char_parsers::chunk_charser<char,XmlParser> {
     ///                         // level = 0 - EOF
 
     /// Returns  current path as the stack of start-tags 
-    const Path& path = _path;
+	const Path& getPath() const noexcept { return _path; }
 
     /// Returns current path depth; same as getPath().size()
-    std::size_t getLevel() const noexcept { return path.size();}
+    std::size_t getLevel() const noexcept { return getPath().size();}
 
     ///}@
 
